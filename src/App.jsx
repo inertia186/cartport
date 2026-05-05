@@ -32,6 +32,7 @@ const PLAYER_KIND = {
 };
 
 const withBase = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+const withCacheBust = (path) => `${withBase(path)}?v=${__CARTPORT_BUILD_ID__}`;
 
 const games = [
   {
@@ -310,8 +311,8 @@ function LocalExportPlayer({ gameTitle, player, note }) {
     >
       <div className="embed-frame">
         <iframe
-          key={`${gameTitle}-${player.src}`}
-          src={withBase(player.src)}
+          key={`${gameTitle}-${player.src}-${__CARTPORT_BUILD_ID__}`}
+          src={withCacheBust(player.src)}
           title={gameTitle}
           loading="eager"
           allowFullScreen

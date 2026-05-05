@@ -95,6 +95,8 @@ Recommended local seam:
 - use `make export-html CART=<slug>` to refresh Cartport's generated HTML export
 - treat the Makefile as the canonical bridge between cart authoring and Cartport publishing
 
+The export target also cache-busts the generated PICO-8 cart script reference inside `public/carts/<slug>/index.html`, so GitHub Pages does not keep serving stale cart JavaScript after an export changes.
+
 Current practical export note:
 - PICO-8 HTML export can refuse to build a cart that does not yet have a captured label image; if export says `please capture a label first`, save a label in PICO-8 and rerun the Make target
 

@@ -33,6 +33,7 @@ export-html: check-pico8 check-cart
 	"$(PICO8_BIN)" "$(CART_FILE)" -export "-f $(EXPORT_STEM).html"
 	@test -d "$(EXPORT_TMP_DIR)" || (echo "HTML export was not produced. If PICO-8 says 'please capture a label first', save a label image for the cart in PICO-8 and retry." >&2; exit 1)
 	mv "$(EXPORT_TMP_DIR)" "$(EXPORT_DIR)"
+	node scripts/cache-bust-pico8-export.mjs "$(EXPORT_DIR)"
 	@echo "Exported $(CART_FILE) -> $(EXPORT_DIR)/index.html"
 
 clean-export:
