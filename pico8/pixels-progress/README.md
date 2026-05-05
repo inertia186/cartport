@@ -19,3 +19,16 @@ Current first-cart artifacts:
 - `sketch-contract.md` — minimum input contract for producing the first `.p8` sketch
 - `pixels-progress-movement-v1.md` — concrete fill for the first movement-proof pass
 - `pixels-progress.p8` — primary source cart to open and tune in actual PICO-8
+
+## Sound sources
+
+Pixel's Progress currently imports selected sounds from Gruber's **Pico-8 SFX Pack!** on the Lexaloffle BBS. Source: https://www.lexaloffle.com/bbs/?tid=34367
+
+Current SFX map:
+- `11` — shed pixels while jumping
+- `16` — player falls out
+- `42` — goal reached
+- `46` — player hit
+- `54` — sand lands
+- `55` — jump
+
