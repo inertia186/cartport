@@ -292,9 +292,28 @@ function MovementPlaytest() {
   );
 }
 
-function PlayerChrome({ children, note }) {
+function PlayerChrome({ title, runtimeLabel, capabilities, children, note }) {
   return (
     <div className="player-host">
+      {(title || runtimeLabel || capabilities?.length) ? (
+        <div className="player-host-meta">
+          <div>
+            {title ? <strong>{title}</strong> : null}
+            {runtimeLabel ? <p>{runtimeLabel}</p> : null}
+          </div>
+
+          {capabilities?.length ? (
+            <div className="capability-list" aria-label="Player capabilities">
+              {capabilities.map((capability) => (
+                <span key={capability} className="capability-pill">
+                  {capability}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {children}
       {note ? <p className="player-note">{note}</p> : null}
     </div>
