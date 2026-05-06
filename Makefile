@@ -8,7 +8,7 @@ EXPORT_STEM := $(EXPORT_ROOT)/$(CART)
 EXPORT_TMP_DIR := $(EXPORT_ROOT)/$(CART)_html
 EXPORT_DIR := $(EXPORT_ROOT)/$(CART)
 
-.PHONY: help run export-html clean-export clean-exports check-pico8 check-cart print-vars
+.PHONY: help run export-html export-png clean-export clean-exports check-pico8 check-cart print-vars
 
 help:
 	@echo "Cartport PICO-8 workflow"
@@ -16,6 +16,7 @@ help:
 	@echo "Targets:"
 	@echo "  make run CART=<slug>         Open a cart in PICO-8"
 	@echo "  make export-html CART=<slug> Export HTML5 build into public/carts/<slug>/"
+	@echo "  make export-png CART=<slug>  Export cartridge PNG (.p8.png) into public/carts/<slug>/"
 	@echo "  make clean-export CART=<slug> Remove one exported cart directory"
 	@echo "  make clean-exports           Remove all generated public/carts/* exports"
 	@echo "  make print-vars CART=<slug>  Show resolved paths for the selected cart"
@@ -26,6 +27,12 @@ help:
 
 run: check-pico8 check-cart
 	"$(PICO8_BIN)" -run "$(CART_FILE)"
+
+export-png: check-pico8 check-cart
+	mkdir -p "$(EXPORT_ROOT)"
+	"$(PICO8_BIN)" "$(CART_FILE)" -export "$(EXPORT_STEM).p8.png"
+	@test -f "$(EXPORT_STEM).p8.png" || (echo "PNG export was not produced. Save a label image for the cart in PICO-8 and retry." >&2; exit 1)
+	@echo "Exported $(CART_FILE) -> $(EXPORT_STEM).p8.png"
 
 export-html: check-pico8 check-cart
 	mkdir -p "$(EXPORT_ROOT)"
