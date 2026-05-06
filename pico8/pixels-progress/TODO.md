@@ -23,10 +23,10 @@
 ## Next validation after traversal
 
 - Verify that touching the goal produces a clear, satisfying success state
-- Verify post-goal continue/retry flow still reads clearly now that final level loops back to Level 1
+- Verify post-goal continue/retry flow still reads clearly across N → Z → M → N
 - Verify that falling lava settles into readable floor-line hazards, that lava contact adds/rotates the current shape in a readable way, and that chaotic FX reads as "bad contact" rather than reward juice
 - Verify that leaving the play field below the floor now behaves intentionally as an out-of-bounds reset state rather than as accidental collision leakage
-- Test the `room_id` loop seam across N → Z → N while sand spawn frequency increases
+- Test the `room_id` loop seam across N → Z → M → N while sand spawn frequency increases
 - Keep future room-family doctrine in `game-specs/pixels-progress/layout-doctrine.md`
 - Check whether the simpler collision hull still feels honest once the visual body becomes asymmetrical
 - Check whether size 2-4 changes route viability in an interesting spatial way instead of only feeling like generic slowdown

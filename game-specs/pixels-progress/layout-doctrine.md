@@ -112,6 +112,7 @@ Useful family examples:
 - `U` — down into a basin, then back up.
 - `I` — mostly vertical proof.
 - `S` — alternating directional commitments.
+- `M` — climb, dip, climb, dip, climb across several vertical strokes.
 
 When designing a family, ask:
 
@@ -134,7 +135,7 @@ Route letter: N
 Topology: three vertical chambers
 Transfers: left -> middle at the top, middle -> right at the bottom
 Hazard doctrine: contact danger along the route, mostly testing whether the player can preserve smallness while traversing a known structure
-Growth pressure: added pixels threaten route viability, transfer cleanliness, and final ascent precision
+Growth pressure: added pixels threaten route viability, transfer cleanliness, and final descent precision
 Teaching goal: movement trust, route legibility, and the first meaning of "I got too big"
 Failure shape: collapse of progress through loss of precision, awkward body shape, or out-of-bounds fall
 ```
@@ -252,7 +253,7 @@ Lava is the current persistent surface hazard. It should begin as a falling drop
   eats a contact and gains pixels. This is *not* a floating hazard; it is
   geometry attached to a ceiling.
 - **Right chamber base pocket.** A small basin two rows above the floor in
-  the right chamber. If the player botches the final ascent and falls
+  the right chamber. If the player botches the final descent and falls
   inside the right chamber, they land in the growth pocket, not on a
   clean floor. This is the "you are getting too big for this line"
   reminder.
@@ -507,6 +508,54 @@ rest of the geometry — and the growth-pressure doctrine — untouched.
 
 ---
 
+## Level 3 — M-family room
+
+
+### Family summary
+
+```text
+Family: M
+Route letter: M
+Topology: four vertical strokes divided by alternating high and low transfers
+Transfers: high cap, low trough, high cap, then final descent to lower-right goal
+Hazard doctrine: danger lives in troughs, high underlips, and recovery pockets where sloppy crest/valley transitions naturally pool
+Growth pressure: added/rotated pixels make repeated narrow handoffs harder, but can sometimes be exploited for risky reach
+Teaching goal: route rhythm across multiple crests and valleys; growth is both liability and temptation
+Failure shape: overgrown body falls out during a trough escape, clips a hot underlip, or loses precision on the final descent
+```
+
+### Room intent
+
+Level 3 adds the M-family: a repeated up/down structure made from four vertical strokes. It should feel like the player is writing an M with their route: climb, drop, climb, drop, then descend into the lower-right goal. Unlike Level 1's three chambers or Level 2's horizontal bands, the M-family tests whether the player can survive several crest/valley transitions in sequence.
+
+### Route beats
+
+1. **Left stroke climb.** Start bottom-left and climb a familiar switchback. This is the confidence beat.
+2. **First high transfer.** Cross a high cap through the first divider. The underlip is dangerous if the player clips it while awkwardly shaped.
+3. **First valley descent.** Descend the second stroke toward a low trough. The trough is where lava and sand pressure can accumulate.
+4. **Middle climb.** Escape the trough and climb the third stroke. This is the main M-family proof: recovery from a low pocket into another climb without new verbs.
+5. **Second high transfer.** Cross the second crest. The player is now more likely to carry extra pixels, so a formerly easy handoff becomes tense.
+6. **Final stroke.** Traverse the last stroke into the goal at the upper-right.
+
+### Lava / hazard placement doctrine (Level 3)
+
+Lava belongs where the M shape creates natural trouble:
+
+- **Trough bases.** The low points between strokes are natural basins. A clean player can escape, but lingering or entering at a bad angle creates hit pressure.
+- **High underlips.** The top transfer caps can have hot seams underneath them. The route itself stays passable; the punishment is for clipping the crest while overgrown or misaligned.
+- **Final descent base pocket.** The last climb should have a low pocket that punishes missed final attempts without making the goal landing itself dirty.
+
+Sand keeps the same global doctrine: falling sand is dangerous, resting sand becomes harmless blocky terrain. In M-family rooms, resting sand can either help bridge troughs or create awkward clutter before a climb, which fits the family without adding a new rule.
+
+### 1x1 viability check (Level 3)
+
+- The first climb mirrors already-tested N-family ledge spacing. OK.
+- The high transfers are platform/cap handoffs, not new movement verbs. OK.
+- The trough escapes must remain within the current single-jump envelope. If they fail, lower the exit ledge or raise the trough by one row before touching movement constants.
+- The lower-right goal should remain reachable by the 1x1 player without requiring hit-assisted growth. Growth-assisted reach is allowed as risky emergent play, but not as the intended route.
+
+---
+
 ## What to actually build first
 
 Suggested build order, to keep this pass cheap:
@@ -521,7 +570,8 @@ Suggested build order, to keep this pass cheap:
 4. Add the bottom-left trench, the bump-dip seams, and the right-gap
    underlip. Verify the same readability check: pooling reads as
    spatial, contact reads as pixels gained.
-5. Only then revisit growth tuning, since the room layouts are now stable
+5. Block out Level 3's M-family strokes and alternating crest/trough handoffs. Verify the M route is walkable end to end before tuning hazards.
+6. Only then revisit growth tuning, since the room layouts are now stable
    enough to make growth a meaningful pressure source.
 
 ## Open questions left for a later pass

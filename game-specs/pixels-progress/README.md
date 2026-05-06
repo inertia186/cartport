@@ -210,11 +210,11 @@ The current proving room is now the canonical **Level 1 N-family** room:
 - transfer from left to middle at the top
 - transfer from middle to right at the bottom
 - hazard/growth pressure aimed at preserving smallness through a known structure
-- current cart flow intent: reaching the Level 1 goal should be able to advance into the Level 2 Z-family room
+- current cart flow advances from Level 1 into the Level 2 Z-family room
 
-The likely next room is a **Level 2 Z-family** experiment:
-- route emphasis shifts from chamber ascent/descent to high traverse, directional break, and lower traverse
-- growth pressure should test commitment and route reversal rather than only climb precision
+The **Level 2 Z-family** room shifts emphasis from chamber ascent/descent to high traverse, directional break, and lower traverse. Growth pressure tests commitment and route reversal rather than only climb precision.
+
+The **Level 3 M-family** room adds repeated crest/valley handoffs: climb, drop, climb, drop, then descend into the lower-right goal. Growth pressure tests whether the player can survive several narrow transfers while their body shape keeps changing.
 
 See also:
 - `game-specs/pixels-progress/layout-doctrine.md`
@@ -225,4 +225,4 @@ See also:
 - At what thresholds does added size begin to affect movement or collision in the best way?
 - How much jump-shedding should be allowed as in-level recovery versus reset-only recovery?
 - How many hazard contacts should Level 1 tolerate before the intended route breaks down?
-- What is the cleanest first Z-family room for Level 2?
+- Does the first M-family room need softer trough exits, or is the current risk profile readable enough?

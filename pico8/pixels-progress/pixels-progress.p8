@@ -7,6 +7,8 @@ __lua__
 -- top transfer then bottom transfer, switchback ledges.
 -- level 2: z-family room, three horizontal bands,
 -- right gap then left gap, mini reversals + bumps.
+-- level 3: m-family room, four vertical strokes,
+-- alternating top valleys and low transfer troughs.
 -- lava = falling growth-pressure droplets. they land,
 -- spread into floor lines, add pixels, and rotate shape.
 
@@ -168,9 +170,79 @@ function load_room_z()
  player.y=8
 end
 
+function load_room_m()
+ -- m-family: four vertical strokes.
+ -- route climbs, dips, climbs, dips, then descends to lower-right goal.
+ -- transfers alternate between high caps and low troughs, making
+ -- growth costly because the player must repeatedly fit through
+ -- narrow handoffs after changing shape.
+ room={
+  goal_x=118,
+  goal_y=110,
+  lava={
+   -- trough pressure after first descent.
+   {x=36,y=116,phase=0.05,cooldown=0},
+   {x=46,y=116,phase=0.25,cooldown=0},
+   -- middle valley / second trough pressure.
+   {x=66,y=68,phase=0.45,cooldown=0},
+   {x=76,y=116,phase=0.65,cooldown=0},
+   -- final ascent base pocket.
+   {x=98,y=116,phase=0.85,cooldown=0},
+   -- high underlip clips: sloppy crest transitions add pixels.
+   {x=32,y=28,phase=0.2,cooldown=0},
+   {x=78,y=30,phase=0.55,cooldown=0}
+  },
+  walls={
+   -- stroke dividers with alternating top/bottom openings.
+   {x=32,y1=34,y2=120},
+   {x=64,y1=8,y2=84},
+   {x=96,y1=34,y2=120}
+  },
+  solids={
+   -- high cap between the first two strokes.
+   {x1=24,y1=30,x2=40,y2=34},
+   -- mid valley ledge before second climb.
+   {x1=54,y1=84,x2=72,y2=88},
+   -- high cap between third and fourth strokes.
+   {x1=80,y1=30,x2=104,y2=34}
+  },
+  platforms={
+   -- stroke 1: climb from start.
+   {x1=2,y=104,x2=16},
+   {x1=18,y=88,x2=30},
+   {x1=2,y=72,x2=16},
+   {x1=18,y=56,x2=30},
+   {x1=4,y=40,x2=20},
+   -- stroke 2: descend after high transfer.
+   {x1=34,y=40,x2=48},
+   {x1=50,y=56,x2=62},
+   {x1=34,y=72,x2=48},
+   {x1=50,y=88,x2=62},
+   {x1=34,y=104,x2=48},
+   -- stroke 3: climb out of low trough.
+   {x1=66,y=104,x2=80},
+   {x1=82,y=88,x2=94},
+   {x1=66,y=72,x2=80},
+   {x1=82,y=56,x2=94},
+   {x1=66,y=40,x2=80},
+   -- stroke 4: descend into the lower-right goal.
+   {x1=98,y=40,x2=112},
+   {x1=114,y=56,x2=126},
+   {x1=98,y=72,x2=112},
+   {x1=114,y=88,x2=126},
+   {x1=100,y=104,x2=126},
+   {x1=108,y=112,x2=126}
+  }
+ }
+ player.x=8
+ player.y=112
+end
+
 function load_current_room()
  if room_id=="z" then
   load_room_z()
+ elseif room_id=="m" then
+  load_room_m()
  else
   load_room_n()
  end
@@ -785,6 +857,7 @@ end
 
 function next_room_for(id)
  if id=="n" then return "z" end
+ if id=="z" then return "m" end
  return "n"
 end
 
