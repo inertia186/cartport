@@ -5,7 +5,7 @@ Cartport is a simple single-page app for browsing and playing curated pico-8 gam
 ## Inspiration
 
 This project is loosely inspired by Anthony Martin's 2023 concept post, **"Idea: GameSeed Studio"**:
-- https://hive.blog/llm/@inertia/idea-gameseed-studio.json
+- https://hive.blog/llm/@inertia/idea-gameseed-studio
 
 That original idea centered on a generative game-design platform with a few distinctive traits:
 - game creation driven by rich natural-language prompts
