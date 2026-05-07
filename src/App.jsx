@@ -43,6 +43,14 @@ const games = [
     description:
       "A platformer built around an almost absurd constraint: the player character is a single pixel. Level 1 uses a full-screen, no-scroll layout reminiscent of Kid Icarus: start at the bottom left, climb to the top, cut right, descend through the middle, then rise again to the goal in the top right — an N-shaped route across the whole screen.",
     sourceUrl: 'https://github.com/inertia186/cartport/blob/main/game-specs/pixels-progress/README.md',
+    cartridgeImage: 'carts/pixels-progress.p8.png',
+    cartridgeDownload: {
+      href: 'carts/pixels-progress.p8.png',
+      filename: 'pixels-progress.p8.png',
+      label: '⬇'
+    },
+    cartridgeBlurb:
+      'A tiny PICO-8 platformer where every bad touch makes the player bigger, stranger, and harder to route through the room.',
     status: 'in development',
     player: {
       kind: PLAYER_KIND.localExport,
@@ -292,28 +300,9 @@ function MovementPlaytest() {
   );
 }
 
-function PlayerChrome({ title, runtimeLabel, capabilities, children, note }) {
+function PlayerChrome({ children, note }) {
   return (
     <div className="player-host">
-      {(title || runtimeLabel || capabilities?.length) ? (
-        <div className="player-host-meta">
-          <div>
-            {title ? <strong>{title}</strong> : null}
-            {runtimeLabel ? <p>{runtimeLabel}</p> : null}
-          </div>
-
-          {capabilities?.length ? (
-            <div className="capability-list" aria-label="Player capabilities">
-              {capabilities.map((capability) => (
-                <span key={capability} className="capability-pill">
-                  {capability}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
       {children}
       {note ? <p className="player-note">{note}</p> : null}
     </div>
@@ -322,12 +311,7 @@ function PlayerChrome({ title, runtimeLabel, capabilities, children, note }) {
 
 function LocalExportPlayer({ gameTitle, player, note }) {
   return (
-    <PlayerChrome
-      title={`${gameTitle} · Export build`}
-      runtimeLabel="Runtime: official PICO-8 HTML export in iframe"
-      capabilities={player.capabilities}
-      note={note ? <><code>{player.src}</code></> : null}
-    >
+    <PlayerChrome note={note ? <><code>{player.src}</code></> : null}>
       <div className="embed-frame">
         <iframe
           key={`${gameTitle}-${player.src}-${__CARTPORT_BUILD_ID__}`}
@@ -343,12 +327,7 @@ function LocalExportPlayer({ gameTitle, player, note }) {
 
 function EmbeddedVmStubPlayer({ gameTitle, player, note }) {
   return (
-    <PlayerChrome
-      title={`${gameTitle} · Embedded runtime host`}
-      runtimeLabel="Runtime: placeholder host for future embedded PICO-8-compatible VM"
-      capabilities={player.capabilities}
-      note={note}
-    >
+    <PlayerChrome note={note}>
       <div className="player-empty runtime-stub">
         <strong>Runtime host stub</strong>
         <p>
@@ -382,12 +361,7 @@ function renderPlayerByKind({ gameTitle, player, note }) {
   switch (player?.kind) {
     case PLAYER_KIND.movementPlaytest:
       return (
-        <PlayerChrome
-          title={`${gameTitle} · Native playtest`}
-          runtimeLabel="Runtime: in-app React prototype sandbox"
-          capabilities={player.capabilities}
-          note={note}
-        >
+        <PlayerChrome note={note}>
           <MovementPlaytest />
         </PlayerChrome>
       );
@@ -404,6 +378,39 @@ function renderPlayerByKind({ gameTitle, player, note }) {
     default:
       return <UnknownPlayer kind={player?.kind ?? 'unknown'} />;
   }
+}
+
+function CartridgeImage({ game }) {
+  if (!game?.cartridgeImage) {
+    return null;
+  }
+
+  const download = game.cartridgeDownload;
+  const downloadHref = download?.href ? withBase(download.href) : null;
+
+  return (
+    <figure className="cartridge-preview">
+      <div className="cartridge-image-wrap">
+        <img
+          src={withCacheBust(game.cartridgeImage)}
+          alt={`${game.title} PICO-8 cartridge`}
+          loading="eager"
+        />
+        {downloadHref ? (
+          <a
+            className="cartridge-download"
+            href={downloadHref}
+            download={download.filename ?? ''}
+            aria-label={`Download ${game.title} cartridge`}
+            title="Download cartridge"
+          >
+            {download.label ?? '⬇'}
+          </a>
+        ) : null}
+      </div>
+      {game.cartridgeBlurb ? <p className="cartridge-blurb">{game.cartridgeBlurb}</p> : null}
+    </figure>
+  );
 }
 
 function GamePlayer({ game, variation, onSelectVariation }) {
@@ -516,16 +523,20 @@ function App() {
                 ) : null}
               </div>
 
-              <GamePlayer
-                game={selectedGame}
-                variation={selectedVariation}
-                onSelectVariation={(variationId) =>
-                  setSelectedVariations((current) => ({
-                    ...current,
-                    [selectedGame.id]: variationId
-                  }))
-                }
-              />
+              <div className="selected-game-stage">
+                <CartridgeImage game={selectedGame} />
+
+                <GamePlayer
+                  game={selectedGame}
+                  variation={selectedVariation}
+                  onSelectVariation={(variationId) =>
+                    setSelectedVariations((current) => ({
+                      ...current,
+                      [selectedGame.id]: variationId
+                    }))
+                  }
+                />
+              </div>
             </article>
           </div>
         </section>

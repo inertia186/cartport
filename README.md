@@ -103,6 +103,12 @@ Current practical export note:
 Example local path:
 - `public/carts/your-cart-here/index.html`
 
+### Cartridge downloads
+
+Cart entries can expose their source/share cartridge with a `.p8.png` download link for handheld/kiosk-style browsing. The portal uses a normal same-origin anchor with the HTML `download` attribute, which is the lightweight SPA-native way to ask the browser to save the cartridge instead of navigating to it.
+
+`public/_headers` also declares `Content-Disposition: attachment` for `.p8.png` files on static hosts that honor `_headers` files, such as Cloudflare Pages or Netlify. GitHub Pages does not support custom response headers from repository files, so on GitHub Pages the behavior is best-effort browser instruction rather than a guaranteed response-header policy.
+
 Source note:
 - The PICO-8 FAQ states that cartridges can be exported to HTML5.
 - https://www.lexaloffle.com/pico-8.php?page=faq
