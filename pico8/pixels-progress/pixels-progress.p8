@@ -2,1255 +2,809 @@ pico-8 cartridge // http://www.pico-8.com
 version 43
 __lua__
 -- pIXEL'S pROGRESS
--- V1.0.4
--- level 1: n-family room, three vertical chambers,
--- top transfer then bottom transfer, switchback ledges.
--- level 2: z-family room, three horizontal bands,
--- right gap then left gap, mini reversals + bumps.
--- level 3: m-family room, four vertical strokes,
--- alternating top valleys and low transfer troughs.
--- lava = falling growth-pressure droplets. they land,
--- spread into floor lines, add pixels, and rotate shape.
--- mobility penalties begin after the third body pixel.
+-- glow-up rebuild V2.0.0
+-- tiny platformer about protecting smallness
 
-player={
- x=8,
- y=112,
- dx=0,
- dy=0,
- size=1,
- body={{x=0,y=0}},
- grounded=false,
- jump_armed=true
-}
+-- controls
+-- arrows: move
+-- z/up: jump
+-- x: toggle zoom/overview
+-- down: retry room
+-- z+x: ask restart, z+x again confirms
 
-restart_pending=false
-level_cleared=false
-level_clear_timer=0
-tries=1
-loop_count=0
-growth_fx_timer=0
-growth_fx_side="right"
-growth_fx_kind="hit"
-sand={}
-sand_spawn_timer=0
-sand_base_min=18
-sand_base_max=42
-out_of_bounds_timer=0
-out_of_bounds_latched=false
-room_id="n"
-next_room_id=nil
-
-floor_y=120
-out_of_bounds_y=128
-mobility_grace_pixels=3
-jump_grace_pixels=6
-jump_shed_chance=0.073
-
+player={}
 room={}
+room_id=1
+tries=1
+loops=0
+clear_t=0
+shake=0
+fx={}
+sand={}
+lava_drops={}
+sand_t=0
+msg_t=0
+msg=""
+jump_down=false
+restart_confirm=0
+zoomed=false
+zcx=0
+zcy=0
+
+gravity=.18
+fall_gravity=.24
+max_fall=2.2
+run_accel=.18
+air_accel=.105
+friction=.74
+max_dx=1.22
+jump_v=-3.05
+coyote_max=6
+buffer_max=6
+jump_shed_chance=.08
+floor_y=121
 
 function _init()
- reset_run()
+ restart_game()
 end
 
-function load_room_n()
- -- n-family: three vertical chambers.
- -- left/middle wall has a notch near the top.
- -- middle/right wall has a notch near the bottom.
- -- inside each chamber, ledges alternate sides so a
- -- single jump cannot skip a tier (face-flip per tier).
- -- lava hazards live in the floor-gutter and the right-chamber
- -- base pocket; the literal floor row stays clean while
- -- size=1 so the legitimate route reads honestly.
- room={
-  goal_x=118,
-  goal_y=26,
-  lava={
-   -- left-chamber floor gutter (contamination pool).
-   -- first drop starts high enough to claim the second
-   -- ledge, leaving the starter ledge clean.
-   {x=34,y=84,phase=0.0,cooldown=0},
-   {x=22,y=116,phase=0.15,cooldown=0},
-   {x=34,y=116,phase=0.3,cooldown=0},
-   -- middle-chamber floor gutter, leaving the bottom
-   -- transfer notch around x=82..86 unblocked.
-   {x=50,y=116,phase=0.45,cooldown=0},
-   {x=62,y=116,phase=0.6,cooldown=0},
-   {x=74,y=116,phase=0.75,cooldown=0},
-   -- top-transfer corruption seam: clipping the notch
-   -- corner from below adds and rotates pixels.
-   {x=44,y=22,phase=0.1,cooldown=0},
-   -- right-chamber base pocket: missed final ascent
-   -- lands here, telegraphing "too big for this line".
-   {x=100,y=116,phase=0.5,cooldown=0},
-   {x=114,y=116,phase=0.85,cooldown=0}
-  },
-  walls={
-   -- left/middle divider, notch at top (rows ~20..26).
-   {x=42,y1=28,y2=120},
-   -- middle/right divider, notch at bottom (rows ~100..120).
-   {x=84,y1=8,y2=100}
-  },
-  solids={},
-  platforms={
-   -- left chamber switchback (alternating l/r anchors).
-   {x1=2,y=104,x2=16},
-   {x1=26,y=88,x2=40},
-   {x1=2,y=72,x2=18},
-   {x1=24,y=56,x2=40},
-   {x1=2,y=40,x2=20},
-   -- top transfer: bridge across the wall notch so the
-   -- player walks (not jumps) into the middle chamber.
-   {x1=22,y=24,x2=44},
-   -- middle chamber descent (alternating).
-   {x1=44,y=24,x2=60},
-   {x1=66,y=40,x2=82},
-   {x1=44,y=56,x2=58},
-   {x1=68,y=72,x2=82},
-   {x1=46,y=88,x2=60},
-   {x1=68,y=104,x2=82},
-   -- right chamber tighter ascent, ledges crowd the
-   -- outer wall to telegraph "this is the proof".
-   {x1=86,y=108,x2=98},
-   {x1=110,y=92,x2=124},
-   {x1=88,y=76,x2=100},
-   {x1=108,y=60,x2=124},
-   {x1=88,y=44,x2=104},
-   {x1=110,y=28,x2=124}
-  }
+function restart_game()
+ room_id=1
+ loops=0
+ tries=1
+ load_room(room_id)
+ msg="protect smallness"
+ msg_t=90
+end
+
+function retry_room()
+ sfx(16)
+ tries+=1
+ load_room(room_id)
+ msg="try "..tries
+ msg_t=45
+end
+
+function make_player(x,y)
+ player={
+  x=x,y=y,dx=0,dy=0,
+  cells={{x=0,y=0}},
+  coyote=0,buf=0,
+  grounded=false,
+  hurt_cd=0
  }
- player.x=8
- player.y=112
 end
 
-function load_room_z()
- -- z-family: three horizontal bands.
- -- top/middle barrier has its gap on the right.
- -- middle/bottom barrier has its gap on the left.
- -- each band carries short bumps so the player has to
- -- step-back, re-launch, re-commit (mini reversal).
- -- lava hazards live in the bottom-band left trench, in the
- -- basins downhill of bumps, and on the right-gap underlip.
- room={
-  goal_x=120,
-  goal_y=110,
-  lava={
-   -- bottom-band trench along the left wall: pooling
-   -- where the player drops in from the left gap.
-   {x=2,y=118,phase=0.0,cooldown=0},
-   {x=6,y=118,phase=0.2,cooldown=0},
-   {x=10,y=118,phase=0.4,cooldown=0},
-   -- basins downhill of top-band bumps (geometry-attached,
-   -- not floating). a botched hop drops in.
-   {x=34,y=42,phase=0.5,cooldown=0},
-   {x=74,y=40,phase=0.6,cooldown=0},
-   -- basin downhill of middle-band bump.
-   {x=54,y=78,phase=0.7,cooldown=0},
-   -- right-gap underlip: clipping the corner on the
-   -- drop adds and rotates pixels.
-   {x=108,y=42,phase=0.85,cooldown=0}
-  },
-  walls={},
-  solids={
-   -- top/middle barrier, full width except right gap.
-   {x1=0,y1=44,x2=110,y2=48},
-   -- top-band bumps (sit on top of the barrier).
-   {x1=24,y1=40,x2=32,y2=44},
-   {x1=64,y1=38,x2=72,y2=44},
-   {x1=88,y1=40,x2=96,y2=44},
-   -- middle/bottom barrier, full width except left gap.
-   {x1=14,y1=80,x2=127,y2=84},
-   -- middle-band bumps.
-   {x1=44,y1=76,x2=52,y2=80},
-   {x1=88,y1=76,x2=96,y2=80},
-   -- bottom-band bumps (squat, just over floor).
-   {x1=40,y1=116,x2=48,y2=120},
-   {x1=72,y1=116,x2=80,y2=120},
-   -- goal landing on the right.
-   {x1=110,y1=112,x2=127,y2=120}
-  },
-  platforms={}
- }
- player.x=8
- player.y=8
+function load_room(id,keep_body)
+ local saved_cells=nil
+ if keep_body and player and player.cells then saved_cells=copy_cells(player.cells) end
+ sand={}
+ lava_drops={}
+ sand_t=30
+ clear_t=0
+ if id==1 then load_n()
+ elseif id==2 then load_z()
+ else load_m()
+ end
+ if saved_cells then player.cells=saved_cells end
+ seed_lava()
 end
 
-function load_room_m()
- -- m-family: four vertical strokes.
- -- route climbs, dips, climbs, dips, then descends to lower-right goal.
- -- transfers alternate between high caps and low troughs, making
- -- growth costly because the player must repeatedly fit through
- -- narrow handoffs after changing shape.
+function load_n()
  room={
-  goal_x=118,
-  goal_y=110,
-  lava={
-   -- trough pressure after first descent.
-   {x=36,y=116,phase=0.05,cooldown=0},
-   {x=46,y=116,phase=0.25,cooldown=0},
-   -- middle valley / second trough pressure.
-   {x=66,y=68,phase=0.45,cooldown=0},
-   {x=76,y=116,phase=0.65,cooldown=0},
-   -- final ascent base pocket.
-   {x=98,y=116,phase=0.85,cooldown=0},
-   -- high underlip clips: sloppy crest transitions add pixels.
-   {x=32,y=28,phase=0.2,cooldown=0},
-   {x=78,y=30,phase=0.55,cooldown=0}
-  },
-  walls={
-   -- stroke dividers with alternating top/bottom openings.
-   {x=32,y1=34,y2=120},
-   {x=64,y1=8,y2=84},
-   {x=96,y1=34,y2=120}
-  },
+  name="n-1 ascent/descent proof",
+  start={8,113}, goal={118,25,8,8},
   solids={
-   -- high cap between the first two strokes.
-   {x1=24,y1=30,x2=40,y2=34},
-   -- mid valley ledge before second climb.
-   {x1=54,y1=84,x2=72,y2=88},
-   -- high cap between third and fourth strokes.
-   {x1=80,y1=30,x2=104,y2=34}
+   {0,121,128,7},
+   {42,30,3,91},{84,8,3,94}
   },
   platforms={
-   -- stroke 1: climb from start.
-   {x1=2,y=104,x2=16},
-   {x1=18,y=88,x2=30},
-   {x1=2,y=72,x2=16},
-   {x1=18,y=56,x2=30},
-   {x1=4,y=40,x2=20},
-   -- stroke 2: descend after high transfer.
-   {x1=34,y=40,x2=48},
-   {x1=50,y=56,x2=62},
-   {x1=34,y=72,x2=48},
-   {x1=50,y=88,x2=62},
-   {x1=34,y=104,x2=48},
-   -- stroke 3: climb out of low trough.
-   {x1=66,y=104,x2=80},
-   {x1=82,y=88,x2=94},
-   {x1=66,y=72,x2=80},
-   {x1=82,y=56,x2=94},
-   {x1=66,y=40,x2=80},
-   -- stroke 4: descend into the lower-right goal.
-   {x1=98,y=40,x2=112},
-   {x1=114,y=56,x2=126},
-   {x1=98,y=72,x2=112},
-   {x1=114,y=88,x2=126},
-   {x1=100,y=104,x2=126},
-   {x1=108,y=112,x2=126}
-  }
+   {2,105,17},{25,89,16},{2,73,18},{25,57,16},{2,41,20},
+   {21,25,24},{45,25,17},{66,41,17},{45,57,15},{68,73,15},{46,89,15},{68,105,16},
+   {87,109,12},{110,93,15},{88,77,13},{108,61,17},{88,45,17},{110,29,15}
+  },
+  lava={{22,117},{34,117},{50,117},{62,117},{74,117},{100,117},{114,117},{44,23},{34,85}},
+  drips={{22,0},{56,18},{75,6},{102,14},{115,2}}
  }
- player.x=8
- player.y=112
+ make_player(room.start[1],room.start[2])
 end
 
-function load_current_room()
- if room_id=="z" then
-  load_room_z()
- elseif room_id=="m" then
-  load_room_m()
+function load_z()
+ room={
+  name="z-2 traverse and reversal",
+  start={8,13}, goal={118,109,8,8},
+  solids={
+   {0,121,128,7},
+   {0,45,109,4},{14,81,114,4},
+   {110,113,18,8}
+  },
+  platforms={
+   {24,41,9},{64,39,9},{88,41,9},
+   {44,77,9},{88,77,9},
+   {40,117,9},{72,117,9}
+  },
+  lava={{2,118},{7,118},{12,118},{34,43},{74,41},{54,79},{108,43}},
+  drips={{31,3},{70,0},{106,8},{48,12}}
+ }
+ make_player(room.start[1],room.start[2])
+end
+
+function load_m()
+ room={
+  name="m-3 crest valley handoffs",
+  start={8,113}, goal={118,109,8,8},
+  solids={
+   {0,121,128,7},
+   {32,35,3,86},{64,8,3,78},{96,35,3,86},
+   {24,31,17,4},{54,85,19,4},{80,31,25,4}
+  },
+  platforms={
+   {2,105,15},{18,89,13},{2,73,15},{18,57,13},{4,41,17},
+   {34,41,15},{50,57,13},{34,73,15},{50,89,13},{34,105,15},
+   {66,105,15},{82,89,13},{66,73,15},{82,57,13},{66,41,15},
+   {98,41,15},{114,57,13},{98,73,15},{114,89,13},{100,105,27},{108,113,19}
+  },
+  lava={{36,117},{46,117},{66,69},{76,117},{98,117},{32,29},{78,29}},
+  drips={{36,4},{66,14},{78,0},{98,10}}
+ }
+ make_player(room.start[1],room.start[2])
+end
+
+function _update60()
+ if btnp(4) or btnp(2) then player.buf=buffer_max end
+ if btnp(3) then retry_room() end
+ if btnp(5) then
+  if btn(4) then ask_restart()
+  else toggle_zoom() end
+ end
+ if restart_confirm>0 then restart_confirm-=1 end
+ if msg_t>0 then msg_t-=1 end
+ if shake>0 then shake-=1 end
+ update_fx()
+ if clear_t>0 then
+  clear_t-=1
+  if clear_t<=0 then next_room() end
+  return
+ end
+ update_lava()
+ update_sand()
+ update_player()
+ check_hazards()
+ if hit_goal() then clear_room() end
+ if player.y>134 then retry_room() end
+end
+
+function toggle_zoom()
+ zoomed=not zoomed
+ if zoomed then msg="zoom" else msg="overview" end
+ msg_t=35
+end
+
+function ask_restart()
+ if restart_confirm>0 then
+  restart_confirm=0
+zoomed=false
+zcx=0
+zcy=0
+  restart_game()
  else
-  load_room_n()
+  restart_confirm=90
+  msg="again to restart"
+  msg_t=90
+  sfx(16)
  end
 end
 
-function restart_from_level_one()
- room_id="n"
- loop_count=0
- reset_run()
+function next_room()
+ if room_id<3 then
+  room_id+=1
+ else
+  room_id=1
+  loops+=1
+ end
+ load_room(room_id,true)
+ msg="level "..room_id
+ if loops>0 then msg="loop "..(loops+1).." / level "..room_id end
+ msg_t=70
 end
 
-function reset_run(preserve_body)
- load_current_room()
- player.dx=0
- player.dy=0
- if not preserve_body then
-  player.size=1
-  player.body={{x=0,y=0}}
+function clear_room()
+ sfx(42)
+ clear_t=45
+ msg="clear"
+ msg_t=45
+end
+
+function update_player()
+ local ax=0
+ if btn(0) then ax-=1 end
+ if btn(1) then ax+=1 end
+ local accel=player.grounded and run_accel or air_accel
+ player.dx+=ax*accel
+ if ax==0 then player.dx*=friction end
+ player.dx=mid(-max_dx,player.dx,max_dx)
+ if player.buf>0 then player.buf-=1 end
+ if player.coyote>0 then player.coyote-=1 end
+ if player.buf>0 and player.coyote>0 then
+  player.dy=jump_v-jump_penalty()
+  sfx(55)
+  player.buf=0
+  player.coyote=0
+  player.grounded=false
+  shed_on_jump()
+ end
+ local z_down=btn(4) or btn(2)
+ if jump_down and not z_down and player.dy<-0.55 then
+  player.dy*=.48
+ end
+ jump_down=z_down
+ if player.dy<0 then player.dy+=gravity else player.dy+=fall_gravity end
+ player.dy=min(max_fall,player.dy)
+ move_axis(player.dx,0)
+ move_axis(0,player.dy)
+ if player.hurt_cd>0 then player.hurt_cd-=1 end
+end
+
+function jump_penalty()
+ return max(0,(#player.cells-3)*.08)
+end
+
+function shed_on_jump()
+ if #player.cells>1 and rnd(1)<jump_shed_chance then
+  local c=player.cells[#player.cells]
+  local sx=player.x+c.x
+  local sy=player.y+c.y
+  deli(player.cells,#player.cells)
+  add_fx(sx,sy,12)
+  sfx(11)
+  msg="shed"
+  msg_t=22
+ end
+end
+
+function move_axis(dx,dy)
+ local steps=ceil(max(abs(dx),abs(dy))*2)
+ if steps<1 then steps=1 end
+ local sx=dx/steps
+ local sy=dy/steps
+ for i=1,steps do
+  player.x+=sx
+  if collides_player() then
+   player.x-=sx
+   player.dx=0
+   break
+  end
  end
  player.grounded=false
- player.jump_armed=true
- restart_pending=false
- level_cleared=false
- level_clear_timer=0
- growth_fx_timer=0
- growth_fx_side="right"
- growth_fx_kind="hit"
- sand={}
- sand_spawn_timer=sand_spawn_delay()
- out_of_bounds_timer=0
- out_of_bounds_latched=false
- next_room_id=nil
- init_lava()
-end
-
-function init_lava()
- for lava in all(room.lava) do
-  lava.spawn_x=lava.x
-  lava.spawn_y=lava.y
-  lava.dy=0
-  lava.cooldown=0
-  lava.landed=false
-  lava.surface_y=nil
-  lava.draw_y=nil
-  lava.x1=nil
-  lava.x2=nil
- end
-end
-
-function lava_surface(lava)
- local left=lava.x
- local right=lava.x+1
- local bottom=lava.y+1
- local next_bottom=bottom+lava.dy
- local hit_y=nil
- local hit_x1=0
- local hit_x2=127
- local hit_draw_y=floor_y+1
-
- if bottom<=floor_y and next_bottom>=floor_y then
-  hit_y=floor_y
- end
-
- for solid in all(room.solids) do
-  if right>=solid.x1 and left<=solid.x2
-  and bottom<=solid.y1 and next_bottom>=solid.y1
-  and (hit_y==nil or solid.y1<hit_y) then
-   hit_y=solid.y1
-   hit_x1=solid.x1
-   hit_x2=solid.x2
-   hit_draw_y=solid.y1
-  end
- end
-
- for platform in all(room.platforms) do
-  if right>=platform.x1 and left<=platform.x2
-  and bottom<=platform.y and next_bottom>=platform.y
-  and (hit_y==nil or platform.y<hit_y) then
-   hit_y=platform.y
-   hit_x1=platform.x1
-   hit_x2=platform.x2
-   hit_draw_y=platform.y+1
-  end
- end
-
- return hit_y,hit_x1,hit_x2,hit_draw_y
-end
-
-function land_lava(lava,surface_y,surface_x1,surface_x2,draw_y)
- local cx=flr(lava.x)
- lava.x1=max(surface_x1,cx-3)
- lava.x2=min(surface_x2,cx+4)
- if lava.x2<lava.x1 then lava.x2=lava.x1 end
- lava.x=(lava.x1+lava.x2)/2
- lava.surface_y=surface_y
- lava.draw_y=draw_y
- lava.y=surface_y
- lava.dy=0
- lava.landed=true
-end
-
-function update_lava()
- for lava in all(room.lava) do
-  if lava.cooldown>0 then
-   lava.cooldown-=1
-  end
-
-  if not lava.landed then
-   lava.dy=min(lava.dy+0.18,1.6)
-   local hit_y,hit_x1,hit_x2,hit_draw_y=lava_surface(lava)
-   if hit_y then
-    land_lava(lava,hit_y,hit_x1,hit_x2,hit_draw_y)
+ for i=1,steps do
+  local old_y=player.y
+  player.y+=sy
+  local pl=nil
+  if sy>0 then pl=platform_hit(old_y,player.y) end
+  if collides_player() or pl then
+   if pl then
+    local low=-999
+    for c in all(player.cells) do low=max(low,c.y) end
+    player.y=pl[2]-low
    else
-    lava.y+=lava.dy
+    player.y-=sy
    end
-  end
- end
-end
-
-function spawn_sand()
- add(sand,{x=flr(rnd(128)),y=0,dy=0.7+rnd(0.5),cooldown=0,resting=false})
-end
-
-function sand_surface(grain)
- local bottom=grain.y
- local next_bottom=grain.y+grain.dy
- local hit_y=nil
-
- if bottom<=floor_y and next_bottom>=floor_y then
-  hit_y=floor_y+1
- end
-
- for solid in all(room.solids) do
-  if grain.x>=solid.x1 and grain.x<=solid.x2
-  and bottom<=solid.y1 and next_bottom>=solid.y1
-  and (hit_y==nil or solid.y1<hit_y) then
-   hit_y=solid.y1
-  end
- end
-
- for platform in all(room.platforms) do
-  if grain.x>=platform.x1 and grain.x<=platform.x2
-  and bottom<=platform.y and next_bottom>=platform.y
-  and (hit_y==nil or platform.y<hit_y) then
-   hit_y=platform.y+1
-  end
- end
-
- for other in all(sand) do
-  if other.resting
-  and other.x==grain.x
-  and bottom<=other.y-1
-  and next_bottom>=other.y-1
-  and (hit_y==nil or other.y-1<hit_y) then
-   hit_y=other.y-1
-  end
- end
-
- return hit_y
-end
-
-function sand_spawn_delay()
- local min_delay=max(4,sand_base_min-(loop_count*2))
- local spread=max(8,sand_base_max-(loop_count*4))
- return min_delay+flr(rnd(spread))
-end
-
-function update_sand()
- sand_spawn_timer-=1
- if sand_spawn_timer<=0 then
-  spawn_sand()
-  sand_spawn_timer=sand_spawn_delay()
- end
-
- for grain in all(sand) do
-  if grain.cooldown>0 then grain.cooldown-=1 end
-
-  if not grain.resting then
-   grain.dy=min(grain.dy+0.03,1.6)
-   local hit_y=sand_surface(grain)
-
-   if hit_y then
-    grain.y=hit_y
-    grain.dy=0
-    grain.resting=true
-    sfx(54)
-   else
-    grain.y+=grain.dy
-    if grain.y>128 then del(sand,grain) end
+   if sy>0 then
+    player.grounded=true
+    player.coyote=coyote_max
    end
+   player.dy=0
+   break
   end
  end
+ if player.grounded then player.coyote=coyote_max end
 end
 
-function body_bounds()
- local min_x=999
- local max_x=-999
- local min_y=999
- local max_y=-999
-
- for part in all(player.body) do
-  min_x=min(min_x,part.x)
-  max_x=max(max_x,part.x)
-  min_y=min(min_y,part.y)
-  max_y=max(max_y,part.y)
- end
-
- return min_x,max_x,min_y,max_y
-end
-
-function body_box()
- local min_x,max_x,min_y,max_y=body_bounds()
- return player.x+min_x,player.x+max_x,player.y+min_y,player.y+max_y
-end
-
-function normalize_body()
- local min_x,max_x,min_y,max_y=body_bounds()
-
- if min_x~=0 or min_y~=0 then
-  for part in all(player.body) do
-   part.x-=min_x
-   part.y-=min_y
-  end
-  player.x+=min_x
-  player.y+=min_y
- end
-
- player.size=max(max_x-min_x+1,max_y-min_y+1)
-end
-
-function has_body_part(px,py)
- for part in all(player.body) do
-  if part.x==px and part.y==py then
-   return true
-  end
+function collides_player()
+ for c in all(player.cells) do
+  local x=flr(player.x+c.x)
+  local y=flr(player.y+c.y)
+  if x<0 or x>127 or y<0 then return true end
+  if solid_at(x,y) then return true end
  end
  return false
 end
 
-function body_fits(test_body)
- local min_x=999
- local max_x=-999
- local min_y=999
- local max_y=-999
-
- for part in all(test_body) do
-  min_x=min(min_x,part.x)
-  max_x=max(max_x,part.x)
-  min_y=min(min_y,part.y)
-  max_y=max(max_y,part.y)
+function solid_at(x,y)
+ if y>=floor_y then return true end
+ for r in all(room.solids) do
+  if x>=r[1] and x<r[1]+r[3] and y>=r[2] and y<r[2]+r[4] then return true end
  end
-
- local left=player.x+min_x
- local right=player.x+max_x
- local top=player.y+min_y
- local bottom=player.y+max_y
-
- if left<0 or right>127 then return false end
-
- for wall in all(room.walls) do
-  if bottom>=wall.y1 and top<=wall.y2 and left<=wall.x and right>=wall.x then
-   return false
-  end
+ for s in all(sand) do
+  if s.rest and x==s.x and y==s.y then return true end
  end
-
- for solid in all(room.solids) do
-  if right>=solid.x1 and left<=solid.x2 and bottom>solid.y1 and top<=solid.y2 then
-   return false
-  end
- end
-
- return true
+ return false
 end
 
-function body_with_candidate(candidate)
- local test_body={}
-  for part in all(player.body) do
-   add(test_body,{x=part.x,y=part.y})
-  end
-  add(test_body,{x=candidate.x,y=candidate.y})
-  return test_body
-end
-
-function side_candidates(side,min_x,max_x,min_y,max_y)
- local candidates={}
-
- if side=="bottom" then
-  for x=min_x,max_x do add(candidates,{x=x,y=max_y+1}) end
-  add(candidates,{x=min_x-1,y=max_y+1})
-  add(candidates,{x=max_x+1,y=max_y+1})
- elseif side=="top" then
-  for x=min_x,max_x do add(candidates,{x=x,y=min_y-1}) end
-  add(candidates,{x=min_x-1,y=min_y-1})
-  add(candidates,{x=max_x+1,y=min_y-1})
- elseif side=="left" then
-  for y=min_y,max_y do add(candidates,{x=min_x-1,y=y}) end
-  add(candidates,{x=min_x-1,y=min_y-1})
-  add(candidates,{x=min_x-1,y=max_y+1})
- else
-  for y=min_y,max_y do add(candidates,{x=max_x+1,y=y}) end
-  add(candidates,{x=max_x+1,y=min_y-1})
-  add(candidates,{x=max_x+1,y=max_y+1})
- end
-
- return candidates
-end
-
-function first_legal_on_side(side,min_x,max_x,min_y,max_y)
- local candidates=side_candidates(side,min_x,max_x,min_y,max_y)
- for candidate in all(candidates) do
-  if not has_body_part(candidate.x,candidate.y) then
-   local test_body=body_with_candidate(candidate)
-   if body_fits(test_body) then
-    return candidate
+function platform_hit(old_y,new_y)
+ local low=-999
+ for c in all(player.cells) do low=max(low,c.y) end
+ local oldb=old_y+low
+ local newb=new_y+low
+ for pl in all(room.platforms or {}) do
+  local top=pl[2]
+  if oldb<=top and newb>=top then
+   for c in all(player.cells) do
+    local x=flr(player.x+c.x)
+    if x>=pl[1] and x<pl[1]+pl[3] then return pl end
    end
   end
  end
  return nil
 end
 
-function shuffled_fallback_sides(primary)
- local sides={primary}
- local fallback={"top","bottom","left","right"}
-
- for side in all(fallback) do
-  if side~=primary then
-   add(sides,side)
-  end
- end
-
- for i=#sides,3,-1 do
-  local j=flr(rnd(i-1))+2
-  sides[i],sides[j]=sides[j],sides[i]
- end
-
- return sides
-end
-
-function rotated_body(turns)
- local min_x,max_x,min_y,max_y=body_bounds()
- local rotated={}
-
- for part in all(player.body) do
-  local x=part.x-min_x
-  local y=part.y-min_y
-  local w=max_x-min_x
-  local h=max_y-min_y
-
-  if turns==1 then
-   add(rotated,{x=h-y,y=x})
-  elseif turns==2 then
-   add(rotated,{x=w-x,y=h-y})
-  else
-   add(rotated,{x=y,y=w-x})
-  end
- end
-
- return rotated
-end
-
-function shuffle_rotation_turns()
- local turns={1,2,3}
- for i=#turns,2,-1 do
-  local j=flr(rnd(i))+1
-  turns[i],turns[j]=turns[j],turns[i]
- end
- return turns
-end
-
-function rotate_player_shape()
- growth_fx_timer=8
- growth_fx_side="top"
- growth_fx_kind="hit"
- if #player.body<=1 then return end
-
- local turns=shuffle_rotation_turns()
- for turn in all(turns) do
-  local test_body=rotated_body(turn)
-  if body_fits(test_body) then
-   player.body=test_body
-   normalize_body()
+function check_hazards()
+ if player.hurt_cd>0 then return end
+ for c in all(player.cells) do
+  local x=flr(player.x+c.x)
+  local y=flr(player.y+c.y)
+  if lava_at(x,y) or falling_lava_at(x,y) or falling_sand_at(x,y) then
+   grow()
    return
   end
  end
 end
 
-function attach_growth(side)
- growth_fx_side=side
- growth_fx_kind="hit"
- growth_fx_timer=8
-
- local min_x,max_x,min_y,max_y=body_bounds()
- local sides=shuffled_fallback_sides(side)
-
- for dir in all(sides) do
-  local candidate=first_legal_on_side(dir,min_x,max_x,min_y,max_y)
-  if candidate then
-   add(player.body,{x=candidate.x,y=candidate.y})
-   normalize_body()
-   growth_fx_side=dir
-   return
-  end
+function lava_at(x,y)
+ for l in all(room.lava) do
+  local w=l[3] or 3
+  if x>=l[1] and x<l[1]+w and y>=l[2] and y<l[2]+2 then return true end
  end
+ return false
 end
 
-function shed_one_jump_pixel()
- if #player.body<=1 then return false end
-
- local min_x,max_x,min_y,max_y=body_bounds()
- local candidates={}
-
- for i=1,#player.body do
-  local part=player.body[i]
-  if part.x==min_x
-  or part.x==max_x
-  or part.y==min_y
-  or part.y==max_y then
-   add(candidates,i)
-  end
+function falling_lava_at(x,y)
+ for d in all(lava_drops) do
+  if abs(x-d.x)<=1 and abs(y-d.y)<=1 then return true end
  end
-
- if #candidates<=0 then return false end
-
- local idx=candidates[flr(rnd(#candidates))+1]
- deli(player.body,idx)
- normalize_body()
- return true
+ return false
 end
 
-function shed_jump_pixels()
- local rolls=#player.body-1
- local lost=false
-
- for i=1,rolls do
-  if #player.body>1 and rnd(1)<jump_shed_chance then
-   lost=shed_one_jump_pixel() or lost
-  end
+function falling_sand_at(x,y)
+ for s in all(sand) do
+  if not s.rest and abs(x-s.x)<=1 and abs(y-s.y)<=1 then return true end
  end
-
- if lost then
-  sfx(11)
-  growth_fx_timer=10
-  growth_fx_side="top"
-  growth_fx_kind="shed"
- end
+ return false
 end
 
-function growth_side(growth)
- local prev_x=player.x-player.dx
- local prev_y=player.y-player.dy
- local left,right,top,bottom=body_box()
- local prev_left,prev_right,prev_top,prev_bottom=prev_x,prev_x+player.size-1,prev_y,prev_y+player.size-1
-
- if prev_bottom<growth.y then return "bottom" end
- if prev_top>growth.y then return "top" end
- if prev_right<growth.x then return "right" end
- if prev_left>growth.x then return "left" end
-
- local dx=growth.x-((left+right)/2)
- local dy=growth.y-((top+bottom)/2)
- if abs(dx)>abs(dy) then
-  return dx<0 and "left" or "right"
- end
- return dy<0 and "top" or "bottom"
-end
-
-function _update60()
- if out_of_bounds_latched then
-  if btnp(5) then
-   tries+=1
-   restart_from_level_one()
-  end
-  return
- end
-
- if level_cleared then
-  level_clear_timer-=1
-  if level_clear_timer<=0 and next_room_id then
-   if next_room_id=="n" then
-    loop_count+=1
-   end
-   room_id=next_room_id
-   reset_run(true)
-  end
-  return
- end
-
- if restart_pending then
-  if btnp(4) then
-   tries+=1
-   restart_from_level_one()
-   return
-  elseif btnp(5) then
-   restart_pending=false
-  end
-  return
- end
-
- if(btnp(5)) then
-  restart_pending=true
-  return
- end
-
- update_player()
- update_lava()
- update_sand()
- check_lava()
- check_sand()
- check_goal()
- if growth_fx_timer>0 then
-  growth_fx_timer-=1
- end
- update_out_of_bounds()
-end
-
-function mobility_size()
- return max(1,player.size-mobility_grace_pixels+1)
-end
-
-function jump_size()
- return max(1,player.size-jump_grace_pixels+1)
-end
-
-function update_player()
- local move_size=mobility_size()
- local jump_move_size=jump_size()
- local max_dx=max(0.7,1.2-((move_size-1)*0.08))
- local grav=0.15+((move_size-1)*0.02)
- local target_dx=0
- local response=player.grounded and 0.34 or 0.2
- local drag=player.grounded and 0.58 or 0.94
-
- if not btn(4) then
-  player.jump_armed=true
- end
-
- if btn(0) then target_dx=-max_dx end
- if btn(1) then target_dx=max_dx end
-
- if btn(0) or btn(1) then
-  player.dx+=(target_dx-player.dx)*response
- else
-  player.dx*=drag
-  if abs(player.dx)<0.03 then player.dx=0 end
- end
-
- if player.grounded and player.jump_armed and btn(4) then
-  sfx(55)
-  shed_jump_pixels()
-  player.dy=-2.4+((jump_move_size-1)*0.08)
-  player.grounded=false
-  player.jump_armed=false
- end
-
- player.dy+=grav
- player.x+=player.dx
- player.y+=player.dy
-
- collide_room()
-end
-
-function hit_player(side)
+function grow()
  sfx(46)
- attach_growth(side)
- rotate_player_shape()
+ player.hurt_cd=32
+ shake=8
+ local dirs={{1,0},{0,1},{-1,0},{0,-1}}
+ local base=player.cells[flr(rnd(#player.cells))+1]
+ local d=dirs[flr(rnd(4))+1]
+ add(player.cells,{x=base.x+d[1],y=base.y+d[2]})
+ normalize_body()
+ rotate_body(flr(rnd(3))+1)
+ if collides_player() then nudge_free() end
+ msg="+pixel"
+ msg_t=28
 end
 
-function check_lava()
- local left,right,top,bottom=body_box()
+function copy_cells(cells)
+ local out={}
+ for c in all(cells) do add(out,{x=c.x,y=c.y}) end
+ return out
+end
 
- for lava in all(room.lava) do
-  local lava_left=lava.x
-  local lava_right=lava.x+1
-  local lava_top=lava.y
-  local lava_bottom=lava.y+1
-
-  if lava.landed then
-   lava_left=lava.x1
-   lava_right=lava.x2
-   lava_top=lava.surface_y
-   lava_bottom=lava.draw_y
+function normalize_body()
+ local seen={}
+ local out={}
+ for c in all(player.cells) do
+  local k=c.x..","..c.y
+  if not seen[k] then
+   seen[k]=true
+   add(out,{x=c.x,y=c.y})
   end
+ end
+ player.cells=out
+end
 
-  if lava.cooldown<=0
-  and right>=lava_left
-  and left<=lava_right
-  and bottom>=lava_top
-  and top<=lava_bottom then
-   lava.cooldown=24
-   if lava.landed then
-    hit_player("top")
-   else
-    hit_player(growth_side(lava))
+function rotate_body(times)
+ for t=1,times do
+  for c in all(player.cells) do
+   local x=c.x
+   c.x=-c.y
+   c.y=x
+  end
+ end
+end
+
+function nudge_free()
+ local tries={{0,-1},{0,-2},{-1,0},{1,0},{0,-3}}
+ for t in all(tries) do
+  player.x+=t[1]
+  player.y+=t[2]
+  if not collides_player() then return end
+  player.x-=t[1]
+  player.y-=t[2]
+ end
+ retry_room()
+end
+
+function seed_lava()
+ local seeds=room.lava
+ room.lava={}
+ for l in all(seeds) do
+  add(lava_drops,{x=l[1]+1,y=l[2]-6,seed=true})
+ end
+end
+
+function update_lava()
+ for d in all(room.drips) do
+  d[3]=(d[3] or flr(rnd(50))) - 1
+  if d[3]<=0 then
+   add(lava_drops,{x=d[1],y=0})
+   d[3]=55+flr(rnd(80))
+  end
+ end
+ for d in all(lava_drops) do
+  d.y+=1.15
+  if solid_at(d.x,d.y+1) or platform_surface_at(d.x,d.y+1) or d.y>120 then
+   add_lava_pool(d.x,flr(min(d.y,119)))
+   del(lava_drops,d)
+  end
+ end
+ for l in all(room.lava) do
+  l[4]=(l[4] or 420)-1
+  if l[4]<=0 then del(room.lava,l) end
+ end
+ while #lava_drops>12 do deli(lava_drops,1) end
+end
+
+function platform_surface_at(x,y)
+ for pl in all(room.platforms or {}) do
+  if x>=pl[1] and x<pl[1]+pl[3] and y>=pl[2]-1 and y<=pl[2]+1 then return true end
+ end
+ return false
+end
+
+function add_lava_pool(x,y)
+ local w=3+flr(rnd(3))
+ local lx=mid(0,x-flr(w/2),127-w)
+ local ly=y
+ while ly>0 and solid_at(lx,ly) do ly-=1 end
+ add(room.lava,{lx,ly,w,420})
+ puff(lx+1,ly,8)
+ while #room.lava>24 do deli(room.lava,1) end
+end
+
+function update_sand()
+ sand_t-=1
+ local target=max(10,40-loops*5-room_id*2)
+ if sand_t<=0 then
+  add(sand,{x=flr(rnd(124))+2,y=-2,rest=false})
+  sand_t=target+flr(rnd(24))
+ end
+ for s in all(sand) do
+  if not s.rest then
+   s.y+=1
+   if solid_at(s.x,s.y+1) or lava_at(s.x,s.y+1) then
+    s.rest=true
+    s.y=flr(s.y)
+    sfx(54)
+    puff(s.x,s.y,10)
    end
   end
  end
+ while #sand>70 do deli(sand,1) end
 end
 
-function check_sand()
- local left,right,top,bottom=body_box()
-
- for grain in all(sand) do
-  if not grain.resting
-  and grain.cooldown<=0
-  and right>=grain.x-1
-  and left<=grain.x+1
-  and bottom>=grain.y-1
-  and top<=grain.y+1 then
-   grain.cooldown=24
-   hit_player(growth_side(grain))
-   del(sand,grain)
-  end
- end
-end
-
-function next_room_for(id)
- if id=="n" then return "z" end
- if id=="z" then return "m" end
- return "n"
-end
-
-function check_goal()
- local left,right,top,bottom=body_box()
- if right>=room.goal_x-2
- and left<=room.goal_x+2
- and bottom>=room.goal_y-2
- and top<=room.goal_y+2 then
-  sfx(42)
-  level_cleared=true
-  level_clear_timer=36
-  next_room_id=next_room_for(room_id)
-  player.dx=0
-  player.dy=0
- end
-end
-
-function update_out_of_bounds()
- local _,_,_,bottom=body_box()
- if bottom>out_of_bounds_y then
-  out_of_bounds_timer+=1
-  if out_of_bounds_timer>=4 then
-   sfx(16)
-   out_of_bounds_latched=true
-   player.dx=0
-   player.dy=0
-  end
- else
-  out_of_bounds_timer=0
- end
-end
-
-function collide_room()
- local prev_x=player.x-player.dx
- local prev_y=player.y-player.dy
- local min_x,max_x,min_y,max_y=body_bounds()
- local left,right,top,bottom=body_box()
- local prev_left=prev_x+min_x
- local prev_right=prev_x+max_x
- local prev_top=prev_y+min_y
- local prev_bottom=prev_y+max_y
- player.grounded=false
-
- if left<0 then
-  player.x-=left
-  player.dx=0
-  left,right,top,bottom=body_box()
- end
- if right>127 then
-  player.x-=right-127
-  player.dx=0
-  left,right,top,bottom=body_box()
- end
-
- for wall in all(room.walls) do
-  if bottom>=wall.y1 and top<=wall.y2 then
-   if player.dx>0 and prev_right<wall.x and right>=wall.x then
-    player.x=wall.x-max_x-1
-    player.dx=0
-    left,right,top,bottom=body_box()
-   elseif player.dx<0 and prev_left>wall.x and left<=wall.x then
-    player.x=wall.x-min_x+1
-    player.dx=0
-    left,right,top,bottom=body_box()
-   end
-  end
- end
-
- for solid in all(room.solids) do
-  if bottom>=solid.y1 and top<=solid.y2 then
-   if player.dx>0 and prev_right<solid.x1 and right>=solid.x1 then
-    player.x=solid.x1-max_x-1
-    player.dx=0
-    left,right,top,bottom=body_box()
-   elseif player.dx<0 and prev_left>solid.x2 and left<=solid.x2 then
-    player.x=solid.x2-min_x+1
-    player.dx=0
-    left,right,top,bottom=body_box()
-   end
-  end
- end
-
- for grain in all(sand) do
-  local sand_y=grain.y-1
-  if grain.resting
-  and player.dy>=0
-  and prev_bottom<=sand_y
-  and bottom>=sand_y
-  and right>=grain.x
-  and left<=grain.x then
-   player.y=sand_y-max_y
-   player.dy=0
-   player.grounded=true
-   left,right,top,bottom=body_box()
-  end
- end
-
- if player.dy>=0 and prev_bottom<=floor_y and bottom>=floor_y then
-  player.y=floor_y-max_y
-  player.dy=0
-  player.grounded=true
-  left,right,top,bottom=body_box()
- end
-
- for solid in all(room.solids) do
-  if right>=solid.x1 and left<=solid.x2 then
-   if player.dy>=0 and prev_bottom<=solid.y1 and bottom>=solid.y1 then
-    player.y=solid.y1-max_y
-    player.dy=0
-    player.grounded=true
-    left,right,top,bottom=body_box()
-   elseif player.dy<0 and prev_top>solid.y2 and top<=solid.y2 then
-    player.y=solid.y2-min_y+1
-    player.dy=0
-    left,right,top,bottom=body_box()
-   end
-  end
- end
-
- for platform in all(room.platforms) do
-  if player.dy>=0
-  and prev_bottom<=platform.y
-  and bottom>=platform.y
-  and right>=platform.x1
-  and left<=platform.x2 then
-   player.y=platform.y-max_y
-   player.dy=0
-   player.grounded=true
-   left,right,top,bottom=body_box()
-  end
- end
-
+function hit_goal()
+ local g=room.goal
+ return player.x>=g[1]-2 and player.x<=g[1]+g[3] and player.y>=g[2]-2 and player.y<=g[2]+g[4]
 end
 
 function _draw()
- cls(1)
- draw_room()
- draw_sand()
- draw_player()
- pset(room.goal_x,room.goal_y,11)
- print("try:"..tries.." loop:"..loop_count,75,2,6)
- if out_of_bounds_latched then
-  rectfill(24,46,103,70,0)
-  rect(24,46,103,70,8)
-  print("falling out",38,54,8)
-  print("x restart",42,62,7)
- elseif out_of_bounds_timer>0 then
-  rectfill(24,46,103,70,0)
-  rect(24,46,103,70,8)
-  print("falling out",38,54,8)
-  print("run collapsing",30,62,9)
+ local ox=0
+ local oy=0
+ if shake>0 then
+  ox=flr(rnd(3))-1
+  oy=flr(rnd(3))-1
  end
- if restart_pending and not out_of_bounds_latched then
-  rectfill(16,48,111,80,0)
-  rect(16,48,111,80,7)
-  print("restart run?",34,56,7)
-  print("z confirm",34,64,11)
-  print("x cancel",34,72,8)
+ cls(0)
+ if zoomed then
+  zcx=mid(0,player.x-32,64)
+  zcy=mid(0,player.y-32,64)
+  camera(ox,oy)
+  draw_world_zoom()
+  camera()
+ else
+  camera(ox,oy)
+  draw_room()
+  draw_sand()
+  draw_fx()
+  draw_player()
+  camera()
  end
+ draw_ui()
 end
 
-function draw_player()
- for part in all(player.body) do
-  pset(player.x+part.x,player.y+part.y,7)
+
+function zx(x) return flr((x-zcx)*2) end
+function zy(y) return flr((y-zcy)*2) end
+function zpset(x,y,c)
+ rectfill(zx(x),zy(y),zx(x)+1,zy(y)+1,c)
+end
+function zrectfill(x1,y1,x2,y2,c)
+ rectfill(zx(x1),zy(y1),zx(x2+1)-1,zy(y2+1)-1,c)
+end
+function zline(x1,y1,x2,y2,c)
+ rectfill(zx(x1),zy(y1),zx(x2+1)-1,zy(y1)+1,c)
+end
+
+function draw_world_zoom()
+ zrectfill(0,121,127,127,5)
+ for r in all(room.solids) do
+  zrectfill(r[1],r[2],r[1]+r[3]-1,r[2]+r[4]-1,5)
+  zline(r[1],r[2],r[1]+r[3]-1,r[2],6)
  end
-
- if growth_fx_timer>0 then
-  local left,right,top,bottom=body_box()
-
-  if growth_fx_kind=="shed" then
-   for i=1,5 do
-    local fx_x=flr(rnd(right-left+1))+left
-    local fx_y=top-1-i-flr(rnd(2))
-    pset(fx_x,fx_y,(i%2==0) and 12 or 7)
-   end
-   circ(left+(right-left)/2,top-2,1,12)
-  else
-   for i=1,6 do
-    local fx_x=player.x
-    local fx_y=player.y
-
-    if growth_fx_side=="bottom" then
-     fx_x=flr(rnd(right-left+1))+left
-     fx_y=bottom+flr(rnd(3))-1
-    elseif growth_fx_side=="top" then
-     fx_x=flr(rnd(right-left+1))+left
-     fx_y=top-flr(rnd(3))+1
-    elseif growth_fx_side=="left" then
-     fx_x=left-flr(rnd(3))+1
-     fx_y=flr(rnd(bottom-top+1))+top
-    else
-     fx_x=right+flr(rnd(3))-1
-     fx_y=flr(rnd(bottom-top+1))+top
-    end
-
-    pset(fx_x,fx_y,(i%2==0) and 8 or 10)
-   end
+ for pl in all(room.platforms or {}) do
+  zline(pl[1],pl[2],pl[1]+pl[3]-1,pl[2],6)
+  for x=pl[1],pl[1]+pl[3]-1,4 do zpset(x,pl[2]+1,13) end
+ end
+ for l in all(room.lava) do
+  local w=l[3] or 3
+  zrectfill(l[1],l[2],l[1]+w-1,l[2]+1,8)
+  zpset(l[1]+flr(w/2),l[2],9)
+ end
+ for d in all(lava_drops) do
+  zpset(d.x,d.y,8)
+  zpset(d.x,d.y-1,9)
+ end
+ for s in all(sand) do
+  if s.rest then zpset(s.x,s.y,10) else
+   zpset(s.x,s.y,9)
+   zpset(s.x,s.y-1,10)
   end
  end
+ for f in all(fx) do zpset(flr(f.x),flr(f.y),f.c) end
+ local g=room.goal
+ zrectfill(g[1],g[2],g[1]+g[3],g[2]+g[4],0)
+ rect(zx(g[1]),zy(g[2]),zx(g[1]+g[3]+1)-1,zy(g[2]+g[4]+1)-1,11)
+ zpset(g[1]+4,g[2]+4,10)
+ draw_player_zoom()
 end
 
-function draw_sand()
- for grain in all(sand) do
-  pset(grain.x,grain.y,grain.resting and 9 or 10)
+function draw_player_zoom()
+ local col=7
+ if player.hurt_cd>0 and player.hurt_cd%4<2 then col=8 end
+ for c in all(player.cells) do
+  local x=flr(player.x+c.x)
+  local y=flr(player.y+c.y)
+  zpset(x-1,y,0)
+  zpset(x+1,y,0)
+  zpset(x,y-1,0)
+  zpset(x,y+1,0)
+ end
+ for c in all(player.cells) do
+  zpset(flr(player.x+c.x),flr(player.y+c.y),col)
  end
 end
 
 function draw_room()
- -- shadows first: decorative only, never in front of terrain
- line(0,floor_y+2,127,floor_y+2,2)
- for solid in all(room.solids) do
-  rectfill(solid.x1+1,solid.y1+2,solid.x2+1,solid.y2+1,2)
+ rectfill(0,121,127,127,5)
+ for r in all(room.solids) do
+  rectfill(r[1],r[2],r[1]+r[3]-1,r[2]+r[4]-1,5)
+  line(r[1],r[2],r[1]+r[3]-1,r[2],6)
  end
- for wall in all(room.walls) do
-  line(wall.x+1,wall.y1+1,wall.x+1,wall.y2+1,2)
+ for pl in all(room.platforms or {}) do
+  line(pl[1],pl[2],pl[1]+pl[3]-1,pl[2],6)
+  for x=pl[1],pl[1]+pl[3]-1,4 do pset(x,pl[2]+1,13) end
  end
- for platform in all(room.platforms) do
-  line(platform.x1+1,platform.y+4,platform.x2+1,platform.y+4,2)
-  line(platform.x2+1,platform.y+1,platform.x2+1,platform.y+3,2)
+ for l in all(room.lava) do
+  local w=l[3] or 3
+  rectfill(l[1],l[2],l[1]+w-1,l[2]+1,8)
+  pset(l[1]+flr(w/2),l[2],9)
  end
-
- line(0,floor_y+1,127,floor_y+1,5)
-
- for solid in all(room.solids) do
-  rectfill(solid.x1,solid.y1+1,solid.x2,solid.y2,5)
-  line(solid.x1,solid.y1,solid.x2,solid.y1,13)
+ for d in all(lava_drops) do
+  pset(d.x,d.y,8)
+  pset(d.x,d.y-1,9)
  end
+ local g=room.goal
+ rect(g[1],g[2],g[1]+g[3],g[2]+g[4],11)
+ pset(g[1]+4,g[2]+4,10)
+end
 
- for platform in all(room.platforms) do
-  rectfill(platform.x1,platform.y+1,platform.x2,platform.y+3,5)
-  line(platform.x1,platform.y,platform.x2,platform.y,13)
- end
-
- for wall in all(room.walls) do
-  line(wall.x,wall.y1,wall.x,wall.y2,13)
- end
-
- for lava in all(room.lava) do
-  local pulse=(sin(time()+lava.phase*6.283)*0.5)+0.5
-  local color=pulse>0.5 and 8 or 10
-  if lava.cooldown>0 then color=2 end
-
-  if lava.landed then
-   rectfill(lava.x1,lava.draw_y,lava.x2,lava.draw_y,color)
-   for x=lava.x1,lava.x2,3 do
-    pset(x,lava.draw_y,7)
-   end
-  else
-   rectfill(lava.x,lava.y,lava.x+1,lava.y+1,color)
-   pset(lava.x+1,lava.y+1,7)
+function draw_sand()
+ for s in all(sand) do
+  if s.rest then pset(s.x,s.y,10) else
+   pset(s.x,s.y,9)
+   pset(s.x,s.y-1,10)
   end
  end
+end
 
+function draw_player()
+ local col=7
+ if player.hurt_cd>0 and player.hurt_cd%4<2 then col=8 end
+ for c in all(player.cells) do
+  local x=flr(player.x+c.x)
+  local y=flr(player.y+c.y)
+  pset(x-1,y,0)
+  pset(x+1,y,0)
+  pset(x,y-1,0)
+  pset(x,y+1,0)
+ end
+ for c in all(player.cells) do
+  pset(flr(player.x+c.x),flr(player.y+c.y),col)
+ end
+end
 
+function draw_ui()
+ rectfill(0,0,127,6,0)
+ print("lv"..room_id.." try"..tries.." px"..#player.cells.." loop"..(loops+1),2,1,7)
+ print(zoomed and "zoom" or "map",106,1,6)
+ if msg_t>0 then
+  local w=#msg*4
+  print(msg,64-w/2,9,7)
+ end
+end
+
+function add_fx(x,y,col)
+ for i=1,8 do
+  local c=col
+  if i%2==0 then c=7 end
+  add(fx,{x=x,y=y,dx=rnd(.8)-.4,dy=-rnd(.8)-.2,t=18+flr(rnd(10)),c=c})
+ end
+end
+
+function update_fx()
+ for f in all(fx) do
+  f.x+=f.dx
+  f.y+=f.dy
+  f.dy+=.05
+  f.t-=1
+  if f.t<=0 then del(fx,f) end
+ end
+end
+
+function draw_fx()
+ for f in all(fx) do
+  pset(flr(f.x),flr(f.y),f.c)
+ end
+end
+
+function puff(x,y,col)
+ for i=1,6 do
+  pset(x+flr(rnd(5))-2,y+flr(rnd(5))-2,col)
+ end
 end
 __label__
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111166616661616111116611111161111661166166611111666111111
-11111111111111111111111111111111111111111111111111111111111111111111111111116116161616116111611111161116161616161611611616111111
-11111111111111111111111111111111111111111111111111111111111111111111111111116116611666111111611111161116161616166611111616111111
-11111111111111111111111111111111111111111111111111111111111111111111111111116116161116116111611111161116161616161111611616111111
-11111111111111111111111111111111111111111111111111111111111111111111111111116116161666111116661111166616611661161111111666111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d1111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-1111111111111111111111ddddddddddddddddddddddddddddddddddddddd11111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111155555555555555555557887555555555555555521111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111155555555555555555555555555555555555555521111111111111111111111d211111111111111111111111111111111b111111111
-111111111111111111111155555555555555555555555555555555555555521111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111112222222222222222222d22222222222222222221111111111111111111111d2111111111111111111111111ddddddddddddddd111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111555555555555555211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111555555555555555211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111555555555555555211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111122222222222222211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-11ddddddddddddddddddd111111111111111111111d21111111111111111111111ddddddddddddddddd1d2111111111111111111111111111111111111111111
-115555555555555555555211111111111111111111d21111111111111111111111555555555555555552d2111111111111111111111111111111111111111111
-115555555555555555555211111111111111111111d21111111111111111111111555555555555555552d2111111111111111111111111111111111111111111
-115555555555555555555211111111111111111111d21111111111111111111111555555555555555552d2111111111111111111111111111111111111111111
-111222222222222222222211111111111111111111d21111111111111111111111122222222222222222d211ddddddddddddddddd11111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2115555555555555555521111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2115555555555555555521111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2115555555555555555521111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111222222222222222221111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111ddddddddddddddddd1d2ddddddddddddddd1111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111555555555555555552d25555555555555552111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111555555555555555552d25555555555555552111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111555555555555555552d25555555555555552111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111122222222222222222d21222222222222222111111111111111111111111d21111111111111111111111ddddddddddddddddd111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111155555555555555555211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111155555555555555555211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111155555555555555555211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111112222222222222222211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-11ddddddddddddddddd11111111111111111111111d2111111111111111111111111ddddddddddddddd1d2111111111111111111111111111111111111111111
-115555555555555555521111111111111111111111d21111111111111111111111115555555555555552d2111111111111111111111111111111111111111111
-115555555555555555521111111111111111111111d21111111111111111111111115555555555555552d2111111111111111111111111111111111111111111
-115555555555555555521111111111111111111111d21111111111111111111111115555555555555552d2111111111111111111111111111111111111111111
-111222222222222222221111111111111111111111d21111111111111111111111111222222222222222d211ddddddddddddd111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2115555555555555211111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2115555555555555211111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2115555555555555211111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111222222222222211111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-11111111111111111111111111ddddddddddddddd1d211ddddddddddddddd11111111111111111111111d2111111111111111111111111111111111111111111
-11111111111111111111111111555557aa7aa7a552d21155555555555555521111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111115555555555555552d21155555555555555521111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111115555555555555552d21155555555555555521111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111222222222222222d21112222222222222221111111111111111111111d2111111111111111111111111ddddddddddddddd111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111555555555555555211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111555555555555555211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111555555555555555211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111122222222222222211
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d21111111111111111111111111111111111111111d2111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111112111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11ddddddddddddddd1111111111111111111111111d2111111111111111111111111ddddddddddddddd111111111111111111111111111111111111111111111
-115555555555555552111111111111111111111111d2111111111111111111111111555555555555555211111111111111111111111111111111111111111111
-115555555555555552111111111111111111111111d2111111111111111111111111555555555555555211111111111111111111111111111111111111111111
-115555555555555552111111111111111111111111d2111111111111111111111111555555555555555211111111111111111111111111111111111111111111
-111222222222222222111111111111111111111111d2111111111111111111111111122222222222222211ddddddddddddd11111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111555555555555521111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111555555555555521111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111555555555555521111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111122222222222221111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111111111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-111111117111111111111111111111111111111111d2111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-55555555555555555557aa7aa7a55557aa7aa7a555555557aa7aa7a55557aa7aa7a55557aa7aa7a5555555555555555557aa7aa7a55555578878878555555555
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700070707700000077707770707077000000777070707700000070000770077077707700000000000000000000000000000000006660666066600000000000
+00700070700700000007007070707007000000707070700700000070007070707070700700000000000000000000000000000000006660606060600000000000
+00700070700700000007007700777007000000777007000700000070007070707077700700000000000000000000000000000000006060666066600000000000
+00700077700700000007007070007007000000700070700700000070007070707070000700000000000000000000000000000000006060606060000000000000
+00777007007770000007007070777077700000700070707770000077707700770070007770000000000000000000000000000000006060606060000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000066600000000000000000000000000000000000000000
+00000000000000000000000000000077707770077077707770077077700000077077707770700070007755777007700770000000000000000000000000000000
+00000000000000000000000000000070707070707007007000700007000000700077707070700070007075700070007000000000000000000000000000000000
+00000000000000000000000000000077707700707007007700700007000000777070707770700070007075770077707770000000000000000000000000000000
+00000000000000000000000000000070007070707007007000700007000000007070707070700070007075700000700070000000000000000000000000000000
+00000000000000000000000000000070007070770007007770077007000000770070707070777077707075777077007700000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000900000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000800000000000000000000000000055500000000000000090000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000055500000000000000080000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000898000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000888000000000000000000000000000000000000055500000000000000000000000000000000000000000
+0000000000000000000006666666666666666666666666666666666666666600000000000000000000005550000000000000000000000000000000bbbbbbbbb0
+000000000000000000000d000d000d000d000d000d000d000d000d000d000d00000000000000000000005550000000000000000000000000000000b0000000b0
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000005550000000000000000000000000000000b0000000b0
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000005550000000000000000000000000000000b0000000b0
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000005550000000000000000000000066666666b666a660b0
+00000000000000000000000000000000000000000066600000000000000000000000000000000000000055500000000000000000000000d000d000b000d000b0
+0000000000000000000000000000000000000000005550000000000000000000000000000000000000005550000000000000000000000000000000b0000000b0
+0000000000000000000000000000000000000000005550000000000000000000000000000000000000005550000000000000000000000000000000b0000000b0
+0000000000000000000000000000000000000000005550000000000000000000000000000000000000005550000000000000000000000000000000bbbbbbbbb0
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00666666666666666666660000000000000000000055500000000000000000000066666666666666666055500000000000000000000000000000000000000000
+00d000d000d000d000d00000000000000000000000555000000000000000000000d000d000d000d000d055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055506666666666666666600000000000000000000000
+0000000000000000000000000000000000000000005550000000000000000000000000000000000000005550d000d000d000d000d00000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000006666666666666666055566666666666666600000000000000000000000055500000000000000000000000000000000000000000
+0000000000000000000000000d000d000d000d0000555d000d000d000d0000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000066666666666666666000
+000000000000000000000000000000000000000000555000000000000000000000000000000000000000555000000000000000000000d000d000d000d000d000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00666666666666666666000000000000000000000055500000000000000000000000666666666666666055500000000000000000000000000000000000000000
+00d000d000d000d000d0000000000000000000000055500000000000000000000000d000d000d000d00055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055506666666666666000000000000000000000000000
+0000000000000000000000000000000000000000005550000000000000000000000000000000000000005550d000d000d000d000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000088988000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000088888000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000006666666666666666055506666666666666660000000000000000000000055500000000000000000000000000000000000000000
+0000000000000000000000000d000d000d000d00005550d000d000d000d000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000666666666666666000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000d000d000d000d00000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000055500000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00666666666666666660000000000000000000000055500000000000000000000000666666666666666600000000000000000000000000000000000000000000
+00d000d000d000d000d0000000000000000000000055500000000000000000000000d000d000d000d00000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000066666666666600000000000000000000000000000
+000000000000000000000000000000000000000000555000000000000000000000000000000000000000000d000d000d00000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000055500000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000008980000000088980000055500008898000000008898000000000898000000000000000000000008980000000000089800000000000
+00000000700000000000008880000000088880000055500008888000000008888000000000888000000000000000000000008880000000000088800000000000
+66666666066666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666
+55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
+55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
+55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
+55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
+55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
+55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
 
 __sfx__
 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

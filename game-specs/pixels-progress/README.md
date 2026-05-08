@@ -203,18 +203,29 @@ The answer should remain legible:
 - jump
 - try again smarter
 
-## Level Family Direction
+## Current Cart Direction — Glow-Up Rebuild
 
-The current proving room is now the canonical **Level 1 N-family** room:
+The current `pixels-progress.p8` is a ground-up cleanup pass, not an incremental patch over the prototype cruft.
+
+Keep the cart centered on:
+- a one-pixel starting body
+- simple platforming: move, jump, fall, retry
+- hazards that add pixels and rotate the body instead of dealing HP damage
+- falling sand that is dangerous in motion but becomes harmless stackable terrain
+- three hand-authored single-screen route families: `N`, `Z`, then `M`
+- a loop back to `N` after `M`, with sand pressure increasing each loop
+
+The **Level 1 N-family** room is the canonical proof room:
 - three separated vertical chambers
 - transfer from left to middle at the top
 - transfer from middle to right at the bottom
 - hazard/growth pressure aimed at preserving smallness through a known structure
-- current cart flow advances from Level 1 into the Level 2 Z-family room
 
 The **Level 2 Z-family** room shifts emphasis from chamber ascent/descent to high traverse, directional break, and lower traverse. Growth pressure tests commitment and route reversal rather than only climb precision.
 
 The **Level 3 M-family** room adds repeated crest/valley handoffs: climb, drop, climb, drop, then descend into the lower-right goal. Growth pressure tests whether the player can survive several narrow transfers while their body shape keeps changing.
+
+Implementation guardrail: prefer readable, boring PICO-8 Lua over clever systems. The game wants crisp room intent and fair movement more than generalized generation.
 
 See also:
 - `game-specs/pixels-progress/layout-doctrine.md`

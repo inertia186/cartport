@@ -1,6 +1,8 @@
 # Pixel's Progress — Level Layout Doctrine
 
-The main level doctrine for Pixel's Progress: concrete single-room geometry, route grammar, and hazard-placement rules for the N-family (Level 1) and Z-family (Level 2).
+The main level doctrine for Pixel's Progress: concrete single-room geometry, route grammar, and hazard-placement rules for the N-family (Level 1), Z-family (Level 2), and M-family (Level 3).
+
+The 2026-05-07 glow-up rebuild uses this doctrine as intent, not as a mandate to preserve every old implementation detail. Keep the cart clean, hand-authored, and readable: each room should communicate its route family immediately, and every hazard should support the core burden mechanic of added pixels plus body rotation.
 
 This note commits to a specific layout shape per level, a hazard placement doctrine grounded in where growth pressure would naturally pool, and a back-and-forth route structure inspired by Kid Icarus screen composition without copying any specific Kid Icarus room.
 
