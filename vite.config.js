@@ -9,6 +9,6 @@ export default defineConfig({
     __CARTPORT_BUILD_ID__: JSON.stringify(buildId)
   },
   server: {
-    allowedHosts: ['coco.local']
+    allowedHosts: ['coco.local', 'coco.tail1b9f02.ts.net']
   }
 });

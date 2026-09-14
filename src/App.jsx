@@ -28,7 +28,8 @@ const PLAYER_KIND = {
   movementPlaytest: 'movement-playtest',
   localExport: 'local-export',
   placeholder: 'placeholder',
-  embeddedVm: 'embedded-vm'
+  embeddedVm: 'embedded-vm',
+  waveformMatch: 'waveform-match'
 };
 
 const withBase = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
@@ -61,32 +62,249 @@ const games = [
     note: 'Generated export path: /carts/pixels-progress/index.html'
   },
   {
-    id: 'slot-02',
-    title: 'Placeholder Cart 02',
-    author: 'Coming later',
-    genre: 'Placeholder',
+    id: 'oscillarium',
+    title: 'Oscillarium',
+    author: 'Cartport Prototype',
+    genre: 'Wave Puzzle',
     description:
-      'Reserved slot for a future cart. The navigation stays in place so the portal already feels like a shelf instead of a one-off page.',
-    player: {
-      kind: PLAYER_KIND.placeholder
+      'A tiny signal-museum puzzle about reconstructing a final waveform from two component waves. The docent would like to welcome you to the Oscill-ARIUM.',
+    sourceUrl: 'https://github.com/inertia186/cartport/blob/main/game-specs/oscillarium/README.md',
+    cartridgeImage: 'carts/oscillarium.p8.png',
+    cartridgeDownload: {
+      href: 'carts/oscillarium.p8.png',
+      filename: 'oscillarium.p8.png',
+      label: '⬇'
     },
-    sourceUrl: '#',
-    status: 'placeholder'
+    cartridgeBlurb:
+      'Mode One prototype: inspect the target waveform, pick two component waves, and submit the pair that recreates the signal.',
+    status: 'playtest',
+    player: {
+      kind: PLAYER_KIND.localExport,
+      surface: 'iframe',
+      runtime: 'pico8-html-export',
+      src: 'carts/oscillarium/index.html'
+    },
+    note: 'Generated export path: /carts/oscillarium/index.html'
   },
   {
-    id: 'slot-03',
-    title: 'Placeholder Cart 03',
-    author: 'Coming later',
-    genre: 'Placeholder',
+    id: 'oubliette',
+    title: 'Oubliette',
+    author: 'Cartport Prototype',
+    genre: 'Dungeon Crawler',
     description:
-      'Another future slot for the catalog. Once there are more carts, this can become a real game entry without changing the structure.',
-    player: {
-      kind: PLAYER_KIND.placeholder
+      'A turn-by-turn first-person dungeon crawler for PICO-8. Explore generated labyrinth floors, fight monsters, collect supplies, level up, and descend deeper into the oubliette.',
+    sourceUrl: 'https://github.com/inertia186/cartport/blob/main/game-specs/oubliette/README.md',
+    cartridgeImage: 'carts/oubliette.p8.png',
+    cartridgeDownload: {
+      href: 'carts/oubliette.p8.png',
+      filename: 'oubliette.p8.png',
+      label: '⬇'
     },
-    sourceUrl: '#',
-    status: 'placeholder'
+    cartridgeBlurb:
+      'Slot 03: a compact PICO-8 dungeon crawl with authored pixel masonry, monsters, icon inventory, leveling, and locked oubliette grates.',
+    status: 'playtest',
+    player: {
+      kind: PLAYER_KIND.localExport,
+      surface: 'iframe',
+      runtime: 'pico8-html-export',
+      src: 'carts/oubliette/index.html'
+    },
+    note: 'Generated export path: /carts/oubliette/index.html'
+  },
+  {
+    id: 'aggreculture',
+    title: 'Aggreculture',
+    author: 'Cartport Prototype',
+    genre: 'Action Farming',
+    description:
+      'Choose a world seed, generate a connected 3×3 top-down overworld, then reclaim its wilderness into persistent farmland with Zelda-like directional tools. Reusing a seed recreates its routes, biomes, obstacles, caches, growth rules, and blight pressure.',
+    sourceUrl: 'https://github.com/inertia186/cartport/blob/main/game-specs/aggreculture/README.md',
+    cartridgeImage: 'carts/aggreculture.p8.png',
+    cartridgeDownload: {
+      href: 'carts/aggreculture.p8.png',
+      filename: 'aggreculture.p8.png',
+      label: '⬇'
+    },
+    cartridgeBlurb:
+      'Set a world seed, reclaim nine wilderness screens, and tap or hold Z to manage the Hoe/Farm action assigned to X.',
+    status: 'in development',
+    player: {
+      kind: PLAYER_KIND.localExport,
+      surface: 'iframe',
+      runtime: 'pico8-html-export',
+      src: 'carts/aggreculture/index.html'
+    },
+    note: 'Generated export path: /carts/aggreculture/index.html'
   }
 ];
+
+
+const OSCILLARIUM_CANDIDATES = [
+  { id: 'low-sine', label: 'LOW SINE', color: '#29adff', freq: 1, amp: 24, phase: 0 },
+  { id: 'high-sine', label: 'HIGH SINE', color: '#ff77a8', freq: 3, amp: 12, phase: 0 },
+  { id: 'phase-sine', label: 'PHASED', color: '#ffd166', freq: 2, amp: 15, phase: Math.PI / 2 },
+  { id: 'wide-sine', label: 'WIDE', color: '#86efac', freq: 1, amp: 16, phase: Math.PI },
+  { id: 'tiny-sine', label: 'TINY 4X', color: '#c084fc', freq: 4, amp: 8, phase: Math.PI / 4 }
+];
+
+const OSCILLARIUM_PUZZLES = [
+  {
+    id: 'exhibit-01',
+    title: 'Exhibit 01: Constructive Wiggle',
+    answer: ['low-sine', 'high-sine'],
+    guide: 'Welcome to the Oscill-ARIUM. Please reconstruct the suspicious wiggle.'
+  },
+  {
+    id: 'exhibit-02',
+    title: 'Exhibit 02: Phase Misbehavior',
+    answer: ['phase-sine', 'tiny-sine'],
+    guide: 'Observe how the signal refuses to stand politely in the middle.'
+  },
+  {
+    id: 'exhibit-03',
+    title: 'Exhibit 03: Counterwave Etiquette',
+    answer: ['wide-sine', 'high-sine'],
+    guide: 'Two waves enter. One confusing wiggle leaves.'
+  }
+];
+
+function sampleWave(wave, t) {
+  return Math.sin(t * Math.PI * 2 * wave.freq + wave.phase) * wave.amp;
+}
+
+function combinedPath(waves, width = 320, height = 96) {
+  const points = [];
+  const mid = height / 2;
+  const count = 96;
+
+  for (let i = 0; i < count; i += 1) {
+    const t = i / (count - 1);
+    const y = mid - waves.reduce((sum, wave) => sum + sampleWave(wave, t), 0) / Math.max(1, waves.length) * 1.55;
+    points.push(`${(t * width).toFixed(2)},${Math.max(6, Math.min(height - 6, y)).toFixed(2)}`);
+  }
+
+  return `M ${points.join(' L ')}`;
+}
+
+function getWaveById(id) {
+  return OSCILLARIUM_CANDIDATES.find((wave) => wave.id === id);
+}
+
+function OscillariumModeOne() {
+  const [puzzleIndex, setPuzzleIndex] = useState(0);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [message, setMessage] = useState('Pick two components, then submit the exhibit report.');
+  const [resultState, setResultState] = useState(null);
+  const puzzle = OSCILLARIUM_PUZZLES[puzzleIndex];
+  const targetWaves = puzzle.answer.map(getWaveById);
+  const selectedWaves = selectedIds.map(getWaveById);
+  const solved = selectedIds.length === 2 && puzzle.answer.every((id) => selectedIds.includes(id));
+
+  const evaluateSelection = (ids) => {
+    if (ids.length < 2) {
+      setResultState(null);
+      setMessage('The docent squints at your selected interference pattern.');
+      return ids;
+    }
+
+    const isCorrect = puzzle.answer.every((answerId) => ids.includes(answerId));
+    if (isCorrect) {
+      setResultState('correct');
+      setMessage('Correct. The exhibit hums like it meant to do that.');
+      return ids;
+    }
+
+    setResultState('incorrect');
+    setMessage('Wrong pair. The display resets with a small, educational noise-crime.');
+    return [];
+  };
+
+  const toggleWave = (id) => {
+    setSelectedIds((current) => {
+      let next;
+      if (current.includes(id)) {
+        next = current.filter((item) => item !== id);
+      } else if (current.length >= 2) {
+        next = [current[1], id];
+      } else {
+        next = [...current, id];
+      }
+      return evaluateSelection(next);
+    });
+  };
+
+  const submit = () => {
+    setSelectedIds((current) => evaluateSelection(current));
+  };
+
+  const nextPuzzle = () => {
+    setPuzzleIndex((current) => (current + 1) % OSCILLARIUM_PUZZLES.length);
+    setSelectedIds([]);
+    setResultState(null);
+    setMessage('Welcome to the Oscill-ARIUM. New exhibit, same questionable docent.');
+  };
+
+  return (
+    <div className="oscillarium-shell">
+      <div className={`oscillarium-display${resultState ? ` ${resultState}` : ''}`}>
+        <div className="oscillarium-header">
+          <span>{puzzle.title}</span>
+          <strong>Target waveform</strong>
+        </div>
+        <WaveScope path={combinedPath(targetWaves)} stroke="#f4f1ff" />
+        <p className="docent-line">“{puzzle.guide}”</p>
+      </div>
+
+      <div className="oscillarium-candidates" aria-label="Component wave candidates">
+        {OSCILLARIUM_CANDIDATES.map((wave) => {
+          const active = selectedIds.includes(wave.id);
+          return (
+            <button
+              key={wave.id}
+              type="button"
+              className={`wave-card${active ? ' active' : ''}`}
+              onClick={() => toggleWave(wave.id)}
+            >
+              <span>{wave.label}</span>
+              <WaveScope path={combinedPath([wave], 180, 54)} stroke={wave.color} compact />
+            </button>
+          );
+        })}
+      </div>
+
+      <div className={`oscillarium-display preview${resultState ? ` ${resultState}` : ''}`}>
+        <div className="oscillarium-header">
+          <span>Selected sum</span>
+          <strong>{selectedIds.length}/2 waves</strong>
+        </div>
+        {resultState ? (
+          <div className={`result-banner ${resultState}`}>
+            {resultState === 'correct' ? 'Correct combination' : 'Incorrect combination'}
+          </div>
+        ) : (
+          <WaveScope
+            path={combinedPath(selectedWaves.length ? selectedWaves : [], 320, 84)}
+            stroke={selectedWaves.length ? '#ffd166' : '#55516b'}
+          />
+        )}
+        <p className="docent-line">{message}</p>
+        <div className="oscillarium-actions">
+          <button type="button" onClick={submit}>Submit pair</button>
+          <button type="button" onClick={nextPuzzle} disabled={!solved}>Next exhibit</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WaveScope({ path, stroke, compact = false }) {
+  return (
+    <svg className={`wave-scope${compact ? ' compact' : ''}`} viewBox="0 0 320 96" role="img" aria-label="Waveform display">
+      <line x1="0" y1="48" x2="320" y2="48" />
+      <path d={path} stroke={stroke} />
+    </svg>
+  );
+}
 
 function MovementPlaytest() {
   const frameRef = useRef(null);
@@ -359,6 +577,13 @@ function UnknownPlayer({ kind }) {
 
 function renderPlayerByKind({ gameTitle, player, note }) {
   switch (player?.kind) {
+    case PLAYER_KIND.waveformMatch:
+      return (
+        <PlayerChrome note={note}>
+          <OscillariumModeOne />
+        </PlayerChrome>
+      );
+
     case PLAYER_KIND.movementPlaytest:
       return (
         <PlayerChrome note={note}>

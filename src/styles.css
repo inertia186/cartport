@@ -470,3 +470,166 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+.oscillarium-shell {
+  margin-top: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.oscillarium-display {
+  padding: 1rem;
+  border: 1px solid rgba(41, 173, 255, 0.2);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(41, 173, 255, 0.16), transparent 38%),
+    rgba(8, 10, 24, 0.86);
+}
+
+.oscillarium-display.preview {
+  border-color: rgba(255, 209, 102, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(255, 209, 102, 0.12), transparent 36%),
+    rgba(8, 10, 24, 0.86);
+}
+
+.oscillarium-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  color: #c8bfe7;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.oscillarium-header strong {
+  color: #f4f1ff;
+}
+
+.wave-scope {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  border-radius: 10px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    rgba(0, 0, 0, 0.24);
+  background-size: 20px 16px;
+}
+
+.wave-scope.compact {
+  min-height: 54px;
+}
+
+.wave-scope line {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1;
+}
+
+.wave-scope path {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 5px currentColor);
+}
+
+.docent-line {
+  margin: 0.75rem 0 0;
+  color: #d6d0f0;
+  line-height: 1.5;
+}
+
+.oscillarium-candidates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.wave-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #f4f1ff;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.wave-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(249, 168, 38, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.wave-card.active {
+  border-color: rgba(255, 209, 102, 0.85);
+  background: rgba(255, 209, 102, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.24);
+}
+
+.wave-card span {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.oscillarium-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+
+.oscillarium-actions button {
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgba(249, 168, 38, 0.5);
+  border-radius: 999px;
+  background: rgba(249, 168, 38, 0.12);
+  color: #ffd166;
+  cursor: pointer;
+}
+
+.oscillarium-actions button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.oscillarium-display.correct {
+  border-color: rgba(134, 239, 172, 0.8);
+  box-shadow: 0 0 0 1px rgba(134, 239, 172, 0.22), 0 0 26px rgba(34, 197, 94, 0.16);
+}
+
+.oscillarium-display.incorrect {
+  border-color: rgba(255, 119, 168, 0.8);
+  box-shadow: 0 0 0 1px rgba(255, 119, 168, 0.22), 0 0 26px rgba(255, 0, 77, 0.16);
+}
+
+.result-banner {
+  display: grid;
+  min-height: 84px;
+  place-items: center;
+  border-radius: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.result-banner.correct {
+  border: 1px solid rgba(134, 239, 172, 0.75);
+  background: rgba(34, 197, 94, 0.22);
+  color: #86efac;
+}
+
+.result-banner.incorrect {
+  border: 1px solid rgba(255, 119, 168, 0.75);
+  background: rgba(255, 0, 77, 0.22);
+  color: #ff77a8;
+}
