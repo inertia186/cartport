@@ -212,8 +212,8 @@ Keep the cart centered on:
 - simple platforming: move, jump, fall, retry
 - hazards that add pixels and rotate the body instead of dealing HP damage
 - falling sand that is dangerous in motion but becomes harmless stackable terrain
-- three hand-authored single-screen route families: `N`, `Z`, then `M`
-- a loop back to `N` after `M`, with sand pressure increasing each loop
+- four hand-authored single-screen route families: `N`, `Z`, `M`, then `L`
+- a loop back to `N` after `L`, with sand pressure increasing each loop
 
 The **Level 1 N-family** room is the canonical proof room:
 - three separated vertical chambers
@@ -224,6 +224,8 @@ The **Level 1 N-family** room is the canonical proof room:
 The **Level 2 Z-family** room shifts emphasis from chamber ascent/descent to high traverse, directional break, and lower traverse. Growth pressure tests commitment and route reversal rather than only climb precision.
 
 The **Level 3 M-family** room adds repeated crest/valley handoffs: climb, drop, climb, drop, then descend into the lower-right goal. Growth pressure tests whether the player can survive several narrow transfers while their body shape keeps changing.
+
+The **Level 4 L-family** room emphasizes a vertical drop into a long lower escape. Growth pressure tests whether the player can descend cleanly, turn the corner, and cross a pressured base route without the body becoming too awkward.
 
 Implementation guardrail: prefer readable, boring PICO-8 Lua over clever systems. The game wants crisp room intent and fair movement more than generalized generation.
 
@@ -237,3 +239,4 @@ See also:
 - How much jump-shedding should be allowed as in-level recovery versus reset-only recovery?
 - How many hazard contacts should Level 1 tolerate before the intended route breaks down?
 - Does the first M-family room need softer trough exits, or is the current risk profile readable enough?
+- Does the L-family room read as a deliberate drop-and-escape shape rather than just a hallway after a fall?

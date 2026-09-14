@@ -9,7 +9,6 @@ __lua__
 -- arrows: move
 -- z/up: jump
 -- x: toggle zoom/overview
--- down: retry room
 -- z+x: ask restart, z+x again confirms
 
 player={}
@@ -26,8 +25,11 @@ sand_t=0
 msg_t=0
 msg=""
 jump_down=false
+last_dir=0
+reverse_t=0
+shed_cd=0
 restart_confirm=0
-zoomed=false
+zoom_level=0
 zcx=0
 zcy=0
 
@@ -84,7 +86,8 @@ function load_room(id,keep_body)
  clear_t=0
  if id==1 then load_n()
  elseif id==2 then load_z()
- else load_m()
+ elseif id==3 then load_m()
+ else load_l()
  end
  if saved_cells then player.cells=saved_cells end
  seed_lava()
@@ -150,9 +153,30 @@ function load_m()
  make_player(room.start[1],room.start[2])
 end
 
+function load_l()
+ room={
+  name="l-4 drop and long escape",
+  start={8,13}, goal={118,109,8,8},
+  solids={
+   {0,121,128,7},
+   {31,18,4,90},
+   {35,105,58,4},
+   {94,77,4,44},
+   {108,113,20,8}
+  },
+  platforms={
+   {2,33,17},{17,49,13},{2,65,17},{17,81,13},{2,97,18},
+   {40,93,13},{58,89,13},{76,93,13},
+   {100,77,18},{106,93,18}
+  },
+  lava={{4,118},{20,118},{42,103},{70,103},{92,118},{100,76}},
+  drips={{8,0},{24,12},{45,4},{72,10},{100,0},{116,16}}
+ }
+ make_player(room.start[1],room.start[2])
+end
+
 function _update60()
  if btnp(4) or btnp(2) then player.buf=buffer_max end
- if btnp(3) then retry_room() end
  if btnp(5) then
   if btn(4) then ask_restart()
   else toggle_zoom() end
@@ -160,6 +184,8 @@ function _update60()
  if restart_confirm>0 then restart_confirm-=1 end
  if msg_t>0 then msg_t-=1 end
  if shake>0 then shake-=1 end
+ if reverse_t>0 then reverse_t-=1 end
+ if shed_cd>0 then shed_cd-=1 end
  update_fx()
  if clear_t>0 then
   clear_t-=1
@@ -175,15 +201,17 @@ function _update60()
 end
 
 function toggle_zoom()
- zoomed=not zoomed
- if zoomed then msg="zoom" else msg="overview" end
+ zoom_level=(zoom_level+1)%3
+ if zoom_level==0 then msg="map"
+ elseif zoom_level==1 then msg="zoom 2x"
+ else msg="zoom 4x" end
  msg_t=35
 end
 
 function ask_restart()
  if restart_confirm>0 then
   restart_confirm=0
-zoomed=false
+zoom_level=0
 zcx=0
 zcy=0
   restart_game()
@@ -196,7 +224,7 @@ zcy=0
 end
 
 function next_room()
- if room_id<3 then
+ if room_id<4 then
   room_id+=1
  else
   room_id=1
@@ -219,6 +247,7 @@ function update_player()
  local ax=0
  if btn(0) then ax-=1 end
  if btn(1) then ax+=1 end
+ check_reversal_shed(ax)
  local accel=player.grounded and run_accel or air_accel
  player.dx+=ax*accel
  if ax==0 then player.dx*=friction end
@@ -250,15 +279,30 @@ function jump_penalty()
 end
 
 function shed_on_jump()
- if #player.cells>1 and rnd(1)<jump_shed_chance then
+ try_shed(jump_shed_chance)
+end
+
+function check_reversal_shed(ax)
+ if ax==0 then return end
+ if last_dir!=0 and ax!=last_dir and reverse_t>0 then
+  try_shed(.18)
+ end
+ last_dir=ax
+ reverse_t=12
+end
+
+function try_shed(chance)
+ if shed_cd>0 then return end
+ if #player.cells>1 and rnd(1)<chance then
   local c=player.cells[#player.cells]
   local sx=player.x+c.x
   local sy=player.y+c.y
   deli(player.cells,#player.cells)
   add_fx(sx,sy,12)
   sfx(11)
-  msg="shed"
+  msg="-1 pixel"
   msg_t=22
+  shed_cd=18
  end
 end
 
@@ -383,7 +427,7 @@ function grow()
  normalize_body()
  rotate_body(flr(rnd(3))+1)
  if collides_player() then nudge_free() end
- msg="+pixel"
+ msg="+1 pixel"
  msg_t=28
 end
 
@@ -509,11 +553,13 @@ function _draw()
   oy=flr(rnd(3))-1
  end
  cls(0)
- if zoomed then
-  zcx=mid(0,player.x-32,64)
-  zcy=mid(0,player.y-32,64)
+ if zoom_level>0 then
+  local span=64
+  if zoom_level==2 then span=32 end
+  zcx=mid(0,player.x-span/2,128-span)
+  zcy=mid(0,player.y-span/2,128-span)
   camera(ox,oy)
-  draw_world_zoom()
+  draw_world_zoom(zoom_level+1)
   camera()
  else
   camera(ox,oy)
@@ -527,10 +573,11 @@ function _draw()
 end
 
 
-function zx(x) return flr((x-zcx)*2) end
-function zy(y) return flr((y-zcy)*2) end
+zscale=2
+function zx(x) return flr((x-zcx)*zscale) end
+function zy(y) return flr((y-zcy)*zscale) end
 function zpset(x,y,c)
- rectfill(zx(x),zy(y),zx(x)+1,zy(y)+1,c)
+ rectfill(zx(x),zy(y),zx(x)+zscale-1,zy(y)+zscale-1,c)
 end
 function zrectfill(x1,y1,x2,y2,c)
  rectfill(zx(x1),zy(y1),zx(x2+1)-1,zy(y2+1)-1,c)
@@ -539,7 +586,8 @@ function zline(x1,y1,x2,y2,c)
  rectfill(zx(x1),zy(y1),zx(x2+1)-1,zy(y1)+1,c)
 end
 
-function draw_world_zoom()
+function draw_world_zoom(scale)
+ zscale=scale
  zrectfill(0,121,127,127,5)
  for r in all(room.solids) do
   zrectfill(r[1],r[2],r[1]+r[3]-1,r[2]+r[4]-1,5)
@@ -575,14 +623,6 @@ end
 function draw_player_zoom()
  local col=7
  if player.hurt_cd>0 and player.hurt_cd%4<2 then col=8 end
- for c in all(player.cells) do
-  local x=flr(player.x+c.x)
-  local y=flr(player.y+c.y)
-  zpset(x-1,y,0)
-  zpset(x+1,y,0)
-  zpset(x,y-1,0)
-  zpset(x,y+1,0)
- end
  for c in all(player.cells) do
   zpset(flr(player.x+c.x),flr(player.y+c.y),col)
  end
@@ -624,13 +664,15 @@ end
 function draw_player()
  local col=7
  if player.hurt_cd>0 and player.hurt_cd%4<2 then col=8 end
- for c in all(player.cells) do
-  local x=flr(player.x+c.x)
-  local y=flr(player.y+c.y)
-  pset(x-1,y,0)
-  pset(x+1,y,0)
-  pset(x,y-1,0)
-  pset(x,y+1,0)
+ if zoom_level==0 then
+  for c in all(player.cells) do
+   local x=flr(player.x+c.x)
+   local y=flr(player.y+c.y)
+   pset(x-1,y,0)
+   pset(x+1,y,0)
+   pset(x,y-1,0)
+   pset(x,y+1,0)
+  end
  end
  for c in all(player.cells) do
   pset(flr(player.x+c.x),flr(player.y+c.y),col)
@@ -640,7 +682,10 @@ end
 function draw_ui()
  rectfill(0,0,127,6,0)
  print("lv"..room_id.." try"..tries.." px"..#player.cells.." loop"..(loops+1),2,1,7)
- print(zoomed and "zoom" or "map",106,1,6)
+ local view="map"
+ if zoom_level==1 then view="2x"
+ elseif zoom_level==2 then view="4x" end
+ print(view,112,1,6)
  if msg_t>0 then
   local w=#msg*4
   print(msg,64-w/2,9,7)

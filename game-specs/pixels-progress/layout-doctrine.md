@@ -1,6 +1,6 @@
 # Pixel's Progress — Level Layout Doctrine
 
-The main level doctrine for Pixel's Progress: concrete single-room geometry, route grammar, and hazard-placement rules for the N-family (Level 1), Z-family (Level 2), and M-family (Level 3).
+The main level doctrine for Pixel's Progress: concrete single-room geometry, route grammar, and hazard-placement rules for the N-family (Level 1), Z-family (Level 2), M-family (Level 3), and L-family (Level 4).
 
 The 2026-05-07 glow-up rebuild uses this doctrine as intent, not as a mandate to preserve every old implementation detail. Keep the cart clean, hand-authored, and readable: each room should communicate its route family immediately, and every hazard should support the core burden mechanic of added pixels plus body rotation.
 
@@ -115,6 +115,7 @@ Useful family examples:
 - `I` — mostly vertical proof.
 - `S` — alternating directional commitments.
 - `M` — climb, dip, climb, dip, climb across several vertical strokes.
+- `L` — drop down a vertical stroke, then escape across a long lower foot.
 
 When designing a family, ask:
 
@@ -573,7 +574,8 @@ Suggested build order, to keep this pass cheap:
    underlip. Verify the same readability check: pooling reads as
    spatial, contact reads as pixels gained.
 5. Block out Level 3's M-family strokes and alternating crest/trough handoffs. Verify the M route is walkable end to end before tuning hazards.
-6. Only then revisit growth tuning, since the room layouts are now stable
+6. Block out Level 4's L-family drop-and-escape shape. Verify the descent, corner turn, and lower crossing are legible in both map and zoom views.
+7. Only then revisit growth tuning, since the room layouts are now stable
    enough to make growth a meaningful pressure source.
 
 ## Open questions left for a later pass
