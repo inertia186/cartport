@@ -2,6 +2,7 @@
 from pathlib import Path
 import subprocess
 import tempfile
+from pico8_check_cart import check_cart
 
 root = Path(__file__).resolve().parents[1]
 source = (root / "pico8/oubliette/oubliette.p8").read_text()
@@ -97,7 +98,7 @@ _init=nil _draw=nil _update60=nil
 '''
 with tempfile.TemporaryDirectory(prefix="oubliette-layout-") as tmp:
     cart = Path(tmp) / "check.p8"
-    cart.write_text(source.replace("__gfx__", checks + "\n__gfx__", 1))
+    cart.write_text(check_cart(source, checks))
     result = subprocess.run(
         ["/Applications/PICO-8.app/Contents/MacOS/pico8", "-x", str(cart)],
         capture_output=True, text=True, timeout=60,
