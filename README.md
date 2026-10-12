@@ -148,9 +148,32 @@ npm run dev
 npm run build
 ```
 
+## Cloudflare Workers
+
+Cartport deploys as a [Worker with static assets](https://developers.cloudflare.com/workers/static-assets/binding/). `wrangler.jsonc` points Wrangler at Vite's `dist/` output, so deployment does not need to infer or rewrite the Vite configuration.
+
+For a Git-connected Cloudflare Worker, use these settings:
+
+- Root directory: repository root
+- Build command: `npm run build`
+- Deploy command: `npx wrangler deploy`
+- Preview deploy command: `npx wrangler preview`
+- Worker name: `cartport` (must match `name` in `wrangler.jsonc`; change it to match an existing Worker if needed)
+
+Use the normal build for Cloudflare so asset URLs start at `/`. `build:pages` is for the GitHub Pages subdirectory.
+
+The empty `previews` block enables [Worker Previews](https://developers.cloudflare.com/workers/previews/configuration/) for branches and pull requests. Static assets and compatibility settings stay at the top level.
+
+To check the deployment locally without publishing:
+
+```bash
+npm run build
+npx wrangler deploy --dry-run
+```
+
 ## GitHub Pages
 
-This repo includes a GitHub Actions workflow at `.github/workflows/pages.yml`.
+This repo includes a GitHub Actions workflow at `.github/workflows/static.yml`.
 
 For the `inertia186/cartport` project site, the Pages build uses:
 
