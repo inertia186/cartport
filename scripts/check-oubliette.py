@@ -2,6 +2,7 @@
 from pathlib import Path
 import subprocess
 import tempfile
+from pico8_check_cart import check_cart
 
 root = Path(__file__).resolve().parents[1]
 cart = (root / "pico8/oubliette/oubliette.p8").read_text()
@@ -47,6 +48,13 @@ function _init()
   end
  end
  assert(sget(6,81)!=0,"avatar atlas was overwritten")
+ printh("OUBLIETTE PASS: rendering, RNG, CPU, viewport and avatar")
+end
+_init()
+_init=nil _draw=nil _update60=nil
+'''
+palette_checks = r'''
+_init() new_run()
  -- UI and world rows must retain separate palettes after every sprite reset.
  for screen in all({"play","title","dead"}) do
   state=screen rest_death=true view_dirty=true
@@ -69,6 +77,12 @@ function _init()
  for y=20,23 do
   for x=20,40 do assert(pget(x,y)!=12,"empty bar shows progress") end
  end
+printh("OUBLIETTE PASS: palettes, overlays and bars")
+_init=nil _draw=nil _update60=nil
+'''
+fade_checks = r'''
+_init() new_run() prisoner=nil
+draw_view()
  -- Measure the fade on a flat patch: clear nearby, then monotonic darkness.
  local remaining=16
  for step=0,16 do
@@ -114,9 +128,7 @@ function _init()
   say(message)
   _draw()
  end
- printh("OUBLIETTE PASS: rendering, palettes, overlays, bars, detail blend, distance fade")
-end
-_init()
+ printh("OUBLIETTE PASS: detail blend and distance fade")
 _init=nil _draw=nil _update60=nil
 '''
 geometry_checks = r'''
@@ -259,6 +271,11 @@ new_run()
  use_z()
  assert(near.hp==0 and notches==1 and xp>old_xp,"thrown kill loses reward")
  monsters_act=act
+ printh("OUBLIETTE PASS: blade pickup/throws/range/walls/first target/turns/melee/rewards")
+_init=nil _draw=nil _update60=nil
+'''
+rest_checks = r'''
+_init() new_run() fill_map() px=9 py=9 dir=1
  -- Rest exposes the player on every side without attacking or recovering.
  for facing=1,4 do
   dir=facing
@@ -295,7 +312,7 @@ new_run()
  hp=1
  walk(1)
  assert(state=="dead" and not rest_death,"later combat death gets rest achievement")
- printh("OUBLIETTE PASS: blade pickup/throws/range/walls/first target/turns/melee/rewards, combat and safe eating/listening")
+ printh("OUBLIETTE PASS: combat and safe eating/listening")
 _init=nil
 _draw=nil
 _update60=nil
@@ -345,7 +362,8 @@ _init()
     enemy.x=9+dirs[side][1] enemy.y=9+dirs[side][2]
     hp=26 srand(21) monsters_act()
     assert(26-hp==frontal+(side==facing and 0 or 1),"side/rear bonus is not exactly +1 after defence")
-    assert(msg=="rat "..(side==facing and "hits -" or "flanks -")..(26-hp),"damage message hides facing bonus")
+    local hit="rat "..(side==facing and "hits -" or "flanks -")..(26-hp)
+    assert(sub(msg,1,#hit)==hit,"damage message hides facing bonus")
    end
   end
   -- Backward collision spends one enemy turn, never a player attack.
@@ -372,6 +390,56 @@ _init=nil
 _draw=nil
 _update60=nil
 '''
+shield_checks = r'''
+_init()
+new_run()
+px=9 py=9 dir=1
+local original_rnd=rnd
+local roll=0
+local calls=0
+rnd=function(n)
+ calls+=1
+ if n then return 1 end -- Fixed damage roll; probability rolls use no argument.
+ return roll
+end
+local bases={.05,0,.10,.20,.30,.40}
+for t=1,6 do
+ for bonus in all({0,2,20}) do
+  for elite in all({false,true}) do
+   local enemy={x=9,y=8,t=t,hp=100,mhp=100,atk=mon_db[t].a+bonus,elite=elite,wake=0,mass=10}
+   mons={enemy}
+   local chance=min(.75,bases[t]+bonus*.05+(elite and .10 or 0))
+   for r in all({0,chance-.001,chance,.99}) do
+    roll=r calls=0 def=2 hp=100
+    monsters_act()
+    local broken=t!=2 and r<chance
+    assert(def==(broken and 1 or 2),"shield chance boundary/species/strength/elite/cap")
+    assert(hp==100-max(1,enemy.atk-2),"shield breaks before protecting current hit")
+    if broken then assert(sub(msg,-9)=="shield -1","shield loss not reported") end
+    if t==2 then assert(calls==1,"slime rolls for shield loss") end
+   end
+  end
+ end
+end
+-- Multiple hits consume at most the available defense, including flank attacks.
+mons={}
+for side=1,4 do
+ add(mons,{x=9+dirs[side][1],y=9+dirs[side][2],t=5,hp=100,atk=4,wake=0})
+end
+roll=0 def=1 hp=100 calls=0
+monsters_act()
+assert(def==0 and calls==5,"multiple attackers overdraw shield or roll without defense")
+-- An approaching enemy does not break a shield until it actually attacks.
+fill_map()
+for y=7,9 do set_cell(9,y,tiles.floor) end
+mons={{x=9,y=7,t=5,hp=100,atk=4,wake=0}}
+def=1 hp=100
+monsters_act()
+assert(def==1 and hp==100,"movement breaks shield")
+rnd=original_rnd
+printh("OUBLIETTE PASS: shield species/strength/elite/cap boundaries, slime immunity, damage order, messages, multiple hits, no defense, movement")
+_init=nil _draw=nil _update60=nil
+'''
 menu_checks = r'''
 _init()
 new_run()
@@ -395,8 +463,6 @@ press(2) assert(action_index==1,"up does not choose eat")
 press(2) assert(action_index==2,"menu selection does not wrap")
 press(0) press(1)
 assert(dir==1 and px==9 and py==9,"menu arrows move player")
-view_dirty=true _draw()
-assert(peek(0x5f5f)==0x10 and peek(0x5f60+13)==world_palette[14],"menu changes dungeon palette")
 assert(rnd()==expected,"menu consumes gameplay rng")
 press(5)
 assert(state=="play" and turns==0 and enemy.y==7 and hp==10 and food==3,"menu opening/navigation/cancel spends resources or enemy turn")
@@ -513,19 +579,26 @@ assert(state=="dead" and turns==1 and keys==1 and #items==0 and not rest_death,"
 c,m=chest_scene() m.y=8 hp=1
 press(2)
 assert(state=="dead" and turns==1 and keys==2 and #items==1,"fatal arrival opens chest or retains modal")
--- The entire HUD and message area remain visible beneath the three-row modal.
-c,m=chest_scene() mons={}
-open_actions(c) state="play" _draw()
-memcpy(0xa000,0x6000,0x2000)
-state="actions" view_dirty=true _draw()
-for offset=84*64,0x1fff do
- assert(peek(0x6000+offset)==peek(0xa000+offset),"chest modal obscures HP or messages")
-end
+c,m=chest_scene() mons={} open_actions(c)
 key=-1 _update60()
 press(5) press(5)
 assert(state=="actions" and not action_lock and action_list[1].n=="eat","chest menu leaks into normal actions")
 btnp=old_btnp btn=old_btn rnd=old_rnd
 printh("OUBLIETTE PASS: chest arrival/inspection/choices/cancel/held keys, keys/rewards, break chance/retries/enemy turns/death, HUD visibility, action menu reset")
+_init=nil _draw=nil _update60=nil
+'''
+menu_render_checks = r'''
+_init() new_run() mons={}
+open_actions() view_dirty=true _draw()
+assert(peek(0x5f5f)==0x10 and peek(0x5f60+13)==world_palette[14],"menu changes dungeon palette")
+-- The entire HUD and message area remain visible beneath the three-row modal.
+open_actions({x=px,y=py,t=7}) state="play" _draw()
+memcpy(0xa000,0x6000,0x2000)
+state="actions" view_dirty=true _draw()
+for offset=84*64,0x1fff do
+ assert(peek(0x6000+offset)==peek(0xa000+offset),"chest modal obscures HP or messages")
+end
+printh("OUBLIETTE PASS: menu palette and chest HUD visibility")
 _init=nil _draw=nil _update60=nil
 '''
 grate_checks = r'''
@@ -588,6 +661,50 @@ for choice=1,2 do
 end
 btnp=old_btnp btn=old_btn rnd=old_rnd
 printh("OUBLIETTE PASS: grate inspection/arrival/key/leave/retries/chance, enemy turns before descent, recovery/death order, no chest loot, arrival shaft, held keys")
+_init=nil _draw=nil _update60=nil
+'''
+lock_notch_checks = r'''
+_init()
+local old_rnd=rnd
+-- Real chest/grate resolution, including rewards/descent, after controlled rolls.
+for grate in all({false,true}) do
+ for count in all({0,1,4,13,30}) do
+  local chance=min(75,10+count*5)/100
+  for success in all({false,true}) do
+   for wear in all({.249,.25}) do
+    new_run() fill_map() px=9 py=9 dir=1
+    set_cell(9,9,tiles.floor)
+    mons={} notches=count keys=2
+    local lock={x=9,y=9,t=7,grate=grate}
+    items=grate and {} or {lock}
+    open_actions(lock) action_index=2
+    assert(lock_break_chance()==min(75,10+count*5),"notch bonus/floor/cap")
+    local calls=0
+    rnd=function(n)
+     calls+=1
+     if calls==1 then return success and chance-.001 or chance end
+     if count>0 and calls==2 then return wear end
+     if grate then return old_rnd(n) end
+     return 0 -- Chest rewards potion, so a notch loss cannot be hidden by loot.
+    end
+    state="play" break_lock()
+    rnd=old_rnd
+    local lost=count>0 and wear<.25
+    assert(notches==count-(lost and 1 or 0),"notch wear boundary or more than one lost")
+    assert(keys==2 and turns==1,"notch attempt consumes key or wrong turns")
+    if success then
+     assert(state=="play" and (grate and floor_n==2 or not grate and #items==0),"pre-loss success odds or shared unlock failed")
+    else
+     assert(state=="actions" and action_index==2 and floor_n==1,"failure loses retry selection")
+     assert(action_list[2].hint==lock_break_hint(),"retry shows stale notch odds")
+     if count==0 then assert(calls==1,"unarmed failure rolls notch damage") end
+    end
+    if lost then assert(sub(msg,-8)=="notch -1","notch loss missing from result") end
+   end
+  end
+ end
+end
+printh("OUBLIETTE PASS: chest/grate notch success floor/scaling/cap, independent wear boundaries, pre-loss odds, rewards/descent, retries/hints/messages/turns")
 _init=nil _draw=nil _update60=nil
 '''
 opening_checks = r'''
@@ -698,6 +815,14 @@ monsters_act()
 assert(a.y==8 and not a.mass and not b.mass and hp==26,"slime moves and combines in one turn")
 monsters_act()
 assert(a.mass==2 and b.hp==0 and hp==26,"adjacent pair cannot merge on following turn")
+printh("OUBLIETTE PASS: slime merge actions/order/wounds/stats/elites/occupancy/rewards, multi-turn growth, partner rules, movement")
+_init=nil _draw=nil _update60=nil
+'''
+slime_render_checks = r'''
+_init() new_run()
+function slime(x,y,h,maxh,a)
+ return {x=x,y=y,t=2,hp=h,mhp=maxh,atk=a,wake=0}
+end
 -- Rendered slime area grows; a large slime remains clipped to the viewport.
 local area=0
 for mass=1,4 do
@@ -726,13 +851,120 @@ for y=0,127 do
   end
  end
 end
-printh("OUBLIETTE PASS: slime merge actions/order/wounds/stats/elites/occupancy/rewards, multi-turn growth, partner rules, movement, visible size and clipping")
+printh("OUBLIETTE PASS: slime visible size, clipping and CPU budget")
+_init=nil _draw=nil _update60=nil
+'''
+prisoner_layout_checks = r'''
+_init()
+local found=0
+for seed=1,64 do
+ srand(seed) new_run()
+ if prisoner then
+  found+=1
+  assert(cell(prisoner.x,prisoner.y)==tiles.wall,"prisoner carves a passage")
+  local neighbors=0
+  for v in all(dirs) do
+   local x,y=prisoner.x+v[1],prisoner.y+v[2]
+   if open_cell(x,y) then
+    neighbors+=1
+    assert(cell(x,y)==tiles.floor and x+y>10,"door at entrance/grate")
+    assert(prisoner.key==id(prisoner.x,prisoner.y)*2+(v[2]!=0 and 1 or 0),"door rendered on wrong face")
+    local exits=0
+    for w in all(dirs) do if open_cell(x+w[1],y+w[2]) then exits+=1 end end
+    assert(exits<=2,"door not in secluded corner")
+   end
+  end
+  assert(neighbors==1 and prisoner.trader and not prisoner.sold,"invalid prisoner placement/state")
+ end
+end
+assert(found>0 and found<64,"prisoner missing or guaranteed")
+local old_rnd=rnd
+rnd=function(v) return v and v[1] or .5 end
+place_prisoner() assert(not prisoner,"50% boundary spawns prisoner")
+rnd=function(v) return v and v[1] or .499 end
+place_prisoner() assert(prisoner,"below 50% fails to spawn")
+fill_map() place_prisoner() assert(not prisoner,"empty map retains prisoner")
+rnd=old_rnd
+printh("OUBLIETTE PASS: prisoner 64 seeds, secluded solid wall, accessible face, spawn boundary, reset and no candidates")
+_init=nil _draw=nil _update60=nil
+'''
+prisoner_door_checks = r'''
+_init() new_run()
+for facing=1,4 do
+ fill_map() px=9 py=9 dir=facing
+ set_cell(px,py,tiles.floor) mons={} items={}
+ local x,y=front(1)
+ local door={x=x,y=y,key=id(x,y)*2+(dirs[dir][2]!=0 and 1 or 0),trader=true}
+ view_dirty=true _draw()
+ memcpy(0xa000,0x6000,0x2000)
+ prisoner=door
+ srand(99) local expected=rnd() srand(99)
+ flip() view_dirty=true _draw()
+ assert(rnd()==expected and stat(1)<1,"door changes rng or exceeds frame budget")
+ local changed=0
+ for offset=0,0x1fff do
+  if peek(0x6000+offset)!=peek(0xa000+offset) then changed+=1 end
+ end
+ assert(changed>20,"door invisible in facing")
+ -- A second wall behind this one must not show through it.
+ prisoner=nil view_dirty=true _draw()
+ memcpy(0xa000,0x6000,0x2000)
+ x,y=front(2)
+ door.x=x door.y=y door.key=id(x,y)*2+(dirs[dir][2]!=0 and 1 or 0)
+ prisoner=door view_dirty=true _draw()
+ for offset=0,0x1fff do
+  assert(peek(0x6000+offset)==peek(0xa000+offset),"hidden door leaks through wall")
+ end
+end
+printh("OUBLIETTE PASS: prisoner door all facings, occlusion, RNG and frame budget")
+_init=nil _draw=nil _update60=nil
+'''
+prisoner_trade_checks = r'''
+_init()
+local old_btnp,old_btn=btnp,btn
+local key=-1
+btnp=function(n) return n==key end
+btn=function(n) return n==key end
+function press(n)
+ key=n _update60() key=-1 _update60()
+end
+for t in all({1,2,4,5,6}) do
+ new_run() fill_map() px=9 py=9 dir=1
+ set_cell(9,9,tiles.floor) set_cell(8,9,tiles.floor)
+ mons={} items={}
+ prisoner={x=9,y=8,key=id(9,8)*2+1,trader=true,t=t,name="item",price=20}
+ gold=19
+ local old=pots+keys+notches+def+food
+ srand(99) local expected=rnd() srand(99)
+ press(4)
+ assert(state=="actions" and #action_list==2 and action_list[1].free and turns==0,"inspection spends turn or omits offer")
+ assert(rnd()==expected,"inspection rerolls offer")
+ press(4)
+ assert(state=="actions" and gold==19 and not prisoner.sold and turns==0,"unaffordable trade charges player")
+ press(5)
+ press(2)
+ assert(state=="actions" and px==9 and py==9 and turns==0,"door bump moves or spends turn")
+ press(3) press(4)
+ assert(state=="play" and gold==19 and turns==0,"leave charges player")
+ gold=20
+ mons={{x=8,y=9,t=2,hp=100,mhp=100,atk=2,wake=0}}
+ press(4)
+ key=4 _update60() _update60() key=-1 _update60()
+ assert(state=="play" and gold==0 and prisoner.sold and turns==1 and hp<26,"purchase/held key skips enemy or duplicates charge")
+ assert(pots+keys+notches+def+food==old+1 and #items==0,"wrong item or duplicate pickup")
+ press(4)
+ assert(#action_list==1 and action_list[1].n=="leave","sold offer replenishes")
+ press(4)
+ assert(turns==1 and gold==0,"sold prisoner charges again")
+end
+btnp=old_btnp btn=old_btn
+printh("OUBLIETTE PASS: prisoner five items, free inspect/bump/leave, stable offer, insufficient gold, exact charge, held keys, enemy turn, sold out")
 _init=nil _draw=nil _update60=nil
 '''
 with tempfile.TemporaryDirectory(prefix="oubliette-check-") as tmp:
-    for name, fixture in (("core", checks), ("geometry", geometry_checks), ("mechanics", mechanics_checks), ("combat", combat_checks), ("menu", menu_checks), ("chest", chest_checks), ("grate", grate_checks), ("openings", opening_checks), ("slime", slime_checks)):
+    for name, fixture in (("menu_render", menu_render_checks), ("prisoner_door", prisoner_door_checks), ("prisoner_layout", prisoner_layout_checks), ("prisoner_trade", prisoner_trade_checks), ("core", checks), ("palette", palette_checks), ("fade", fade_checks), ("rest", rest_checks), ("geometry", geometry_checks), ("mechanics", mechanics_checks), ("combat", combat_checks), ("shield", shield_checks), ("menu", menu_checks), ("chest", chest_checks), ("grate", grate_checks), ("lock_notch", lock_notch_checks), ("openings", opening_checks), ("slime", slime_checks), ("slime_render", slime_render_checks)):
         target = Path(tmp) / f"{name}.p8"
-        target.write_text(cart.replace("__gfx__", fixture + "\n__gfx__", 1))
+        target.write_text(check_cart(cart, fixture))
         try:
             result = subprocess.run(
                 ["/Applications/PICO-8.app/Contents/MacOS/pico8", "-x", str(target)],
