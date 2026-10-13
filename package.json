@@ -7,7 +7,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "build:pages": "vite build --base=/cartport/",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:player-keyboard": "node --test tests/pico8-keyboard.test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
