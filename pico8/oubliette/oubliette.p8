@@ -8,20 +8,20 @@ __lua__
 mw=19
 mh=19
 vx0=1
-vy0=11
+vy0=8
 vx1=126
-vy1=82
+vy1=91
 view_cx=64
-view_cy=43
+view_cy=47
 
 -- The middle band has its own stone, fire, and shadow colours.
-world_palette={0,129,133,131,4,5,6,7,8,9,10,11,140,134,128,143}
+world_palette=split("0,129,133,131,4,5,6,7,8,9,10,11,140,134,128,143")
 
 -- Irregular 4x4 coverage, transparent to black; stable between redraws.
-dark_patterns={0xffff,0xfeff,0xfedf,0x7edf,0x7ede,0x7ade,0x7ad6,0x7a96,0x5a96,0x5a94,0x5294,0x5284,0x1284,0x1280,0x0280,0x0200,0x0000}
+dark_patterns=split("0xffff,0xfeff,0xfedf,0x7edf,0x7ede,0x7ade,0x7ad6,0x7a96,0x5a96,0x5a94,0x5294,0x5284,0x1284,0x1280,0x0280,0x0200,0x0000")
 
 dirs={{0,-1},{1,0},{0,1},{-1,0}}
-dnames={"n","e","s","w"}
+dnames=split("n,e,s,w")
 
 tiles={
  wall=1,
@@ -29,12 +29,7 @@ tiles={
  grate=2
 }
 
-themes={
- {n="crypt",ceil=1,ground=1,wall=5,stone=1,hi=5,edge=5,lit=10,shade=0,accent=2,moss=3},
- {n="moss",ceil=1,ground=1,wall=5,stone=1,hi=5,edge=5,lit=10,shade=0,accent=3,moss=11},
- {n="brick",ceil=1,ground=1,wall=5,stone=4,hi=5,edge=5,lit=9,shade=0,accent=4,moss=3},
- {n="pit",ceil=0,ground=1,wall=2,stone=1,hi=5,edge=5,lit=10,shade=0,accent=2,moss=3}
-}
+themes=split("crypt,moss,brick,pit")
 
 sp_rat=0
 sp_slime=2
@@ -53,26 +48,23 @@ sp_grate=12
 sp_shaft=14
 sp_torch=41
 sp_torch2=42
-sp_avatar=160
 sp_glow=44
 
 -- authored environment atlas
 sp_niche=88
 sp_frame=192
 sp_bar=194
-big_spr={[0]=true,[2]=true,[4]=true,[6]=true,[8]=true,[10]=true,[46]=true,[160]=true}
+big_spr={[0]=true,[2]=true,[4]=true,[6]=true,[8]=true,[10]=true,[46]=true}
 
 mon_spr={sp_rat,sp_slime,sp_bat,sp_skel,sp_gob,sp_wraith}
 item_spr={sp_potion,sp_key,sp_coin,sp_sword,sp_shield,sp_ration,sp_chest}
 
-mon_db={
- {n="rat",c=4,h=4,a=1,xp=2,breakage=.05},
- {n="slime",c=11,h=6,a=2,xp=3,breakage=0},
- {n="bat",c=5,h=5,a=2,xp=4,breakage=.10},
- {n="skel",c=6,h=8,a=3,xp=5,breakage=.20},
- {n="gob",c=8,h=10,a=4,xp=7,breakage=.30},
- {n="wraith",c=2,h=14,a=5,xp=10,breakage=.40}
-}
+-- Species: name, health, attack, XP, shield-break chance.
+mon_db={}
+for row in all(split("rat,4,1,2,0.05;slime,6,2,3,0;bat,5,2,4,0.1;skel,8,3,5,0.2;gob,10,4,7,0.3;wraith,14,5,10,0.4",";")) do
+ local v=split(row)
+ add(mon_db,{n=v[1],h=v[2],a=v[3],xp=v[4],breakage=v[5]})
+end
 
 g={}
 mons={}
@@ -84,7 +76,6 @@ dir=1
 floor_n=1
 theme=1
 turns=0
-depth_seed=0
 
 hp=26
 maxhp=26
@@ -104,6 +95,14 @@ state="title"
 shake=0
 view_dirty=true
 torch_frame=0
+motion_t=0
+motion_x=0
+motion_y=0
+hit_t=0
+hurt_t=0
+shield_t=0
+shield_loss=0
+idle_frame=0
 
 function _init()
  poke(0x5f2d,1)
@@ -119,6 +118,13 @@ function _init()
 end
 
 function _update60()
+ if motion_t+hit_t+hurt_t+shield_t>0 then view_dirty=true end
+ motion_t=max(0,motion_t-1)
+ hit_t=max(0,hit_t-1)
+ hurt_t=max(0,hurt_t-1)
+ shield_t=max(0,shield_t-1)
+ local idle=flr(time()*3)%2
+ if idle!=idle_frame then idle_frame=idle view_dirty=true end
  local nf=flr(time()*7.5)%2
  if nf!=torch_frame then
   torch_frame=nf
@@ -200,6 +206,7 @@ function _draw()
 end
 
 function new_run()
+ motion_t=0 hit_t=0 hurt_t=0 shield_t=0
  rest_death=false
  action_keys_held=false
  action_lock=nil
@@ -223,7 +230,8 @@ end
 
 function new_floor()
  theme=(floor_n-1)%#themes+1
- depth_seed=flr(rnd(9000))+1000
+ -- Preserve the first RNG draw used by existing floor seeds.
+ rnd(9000)
  g={}
  mons={}
  items={}
@@ -242,7 +250,7 @@ function new_floor()
  for i=1,4 do
   if open_cell(px+dirs[i][1],py+dirs[i][2]) then dir=i break end
  end
- say("floor "..floor_n..": "..themes[theme].n)
+ say("floor "..floor_n..": "..themes[theme])
 end
 
 function id(x,y)
@@ -458,11 +466,13 @@ function place_mons(n)
 end
 
 function turn_left()
+ motion_t=6 motion_x=-5 motion_y=0
  dir=(dir+2)%4+1
  tick("turn left")
 end
 
 function turn_right()
+ motion_t=6 motion_x=5 motion_y=0
  dir=dir%4+1
  tick("turn right")
 end
@@ -489,6 +499,7 @@ function walk(step)
 
  px=nx
  py=ny
+ motion_t=6 motion_x=0 motion_y=step*2
  pickup_here()
  if cell(px,py)==tiles.grate then open_actions({grate=true}) end
  tick()
@@ -532,6 +543,7 @@ function use_z()
   else
    px=x
    py=y
+   motion_t=6 motion_x=0 motion_y=2
    take_item(it)
    tick()
   end
@@ -594,9 +606,11 @@ function listen_turn()
 end
 
 function tick(t,resting)
+ local armor=def
  turns+=1
  if t then say(t) end
  monsters_act()
+ if def<armor then shield_loss=armor-def shield_t=45 end
  if hp<=0 then
   hp=0
   state="dead"
@@ -706,6 +720,7 @@ function open_chest(it)
 end
 
 function hit_monster(m,thrown_damage)
+ hit_t=10
  local dmg=thrown_damage or max(1,atk+notches+flr(rnd(4))-1-(m.elite and 1 or 0))
  m.hp-=dmg
  shake=3
@@ -751,6 +766,7 @@ function monsters_act()
      local dmg=max(1,m.atk-def+flr(rnd(3))-1)
      if exposed then dmg+=1 end
      hp-=dmg
+     hurt_t=10
      shake=5
      say(mon_db[m.t].n..(exposed and " flanks -" or " hits -")..dmg)
      if def>0 and m.t!=2 and rnd()<min(.75,mon_db[m.t].breakage+max(0,m.atk-mon_db[m.t].a)*.05+(m.elite and .10 or 0)) then
@@ -833,11 +849,11 @@ function say(t)
 end
 
 function draw_view()
- local ox=0
- local oy=0
+ local ox=motion_x*motion_t/6
+ local oy=motion_y*motion_t/6
  if shake>0 then
-  ox=(turns+shake)%3-1
-  oy=(turns*2+shake)%3-1
+  ox+=(turns+shake)%3-1
+  oy+=(turns*2+shake)%3-1
  end
 
  if backdrop_theme!=theme then
@@ -890,7 +906,7 @@ function draw_view()
   local hit=cast_wall(sx-ox)
   local z=view_z(hit.d)
   local top=view_cy-16.5/z+oy
-  local bottom=view_cy+21/z+oy
+  local bottom=view_cy+22/z+oy
   local bank=mid(1,flr(hit.d+.5),4)-1
   local warm=hit.side and hit.d<3.5
   local u=flr(hit.u*32)%16
@@ -903,6 +919,14 @@ function draw_view()
    fillp()
   else
    sspr(bank*32+u+(warm and 16 or 0),48,1,32,sx,top,1,bottom-top+1)
+  end
+  -- Sparse hanging iron links belong to the wall, never the floor or a door.
+  if theme==1 and hit.key%13==3 and u>=6 and u<=8 and not (prisoner and hit.key==prisoner.key) then
+   local h=(bottom-top)/8
+   for link=1,3 do
+    local y=top+h*link
+    line(sx,y,sx,y+h*.7,(u==7 and 1 or 5))
+   end
   end
   if prisoner and hit.key==prisoner.key then draw_prisoner_door(sx,top,bottom,hit.u) end
   darken(sx,top,sx,bottom,hit.d)
@@ -938,6 +962,14 @@ function draw_view()
   objects[j]=o
  end
  for o in all(objects) do draw_visible_object(o) end
+ clip(vx0,vy0,vx1-vx0+1,vy1-vy0+1)
+ if hit_t>0 then
+  local k=10-hit_t
+  line(52+k,62-k,68+k,46-k,7)
+  line(53+k,64-k,69+k,48-k,6)
+ end
+ if hurt_t>0 then rect(1,8,126,91,8) end
+ clip()
  draw_view_frame()
 end
 
@@ -1016,7 +1048,7 @@ end
 function rect_for_depth(d)
  if d==0 then return {vx0,vy0,vx1,vy1} end
  local z=view_z(d-.5)
- return {flr(view_cx-19/z),flr(view_cy-16.5/z),ceil(view_cx+19/z),ceil(view_cy+21/z)}
+ return {flr(view_cx-19/z),flr(view_cy-16.5/z),ceil(view_cx+19/z),ceil(view_cy+22/z)}
 end
 
 -- Stone coordinates are in world space: blocks shrink toward the horizon.
@@ -1025,6 +1057,17 @@ function stone(u,v,d,warm)
  local row=flr(v/(theme==3 and 6 or 8))
  local a=flr(u+row*5)%16
  local b=flr(v)%(theme==3 and 6 or 8)
+ if theme==1 then
+  if a==0 or b==0 then return 1 end
+  if (a==1 or a==15) and b==1 then return 1 end
+  local c=2
+  if b==1 and a>2 and a<14 then c=warm and 13 or 5 end
+  if b==7 or a==15 then c=1 end
+  if row%3==1 and a==9+flr(b/3) and b>2 and b<6 then c=1 end
+  if (a*7+b*11+row*3)%37==1 then c=14 end
+  if d>=3 and c==5 then c=2 end
+  return c
+ end
  -- Keep joints, but interrupt the black horizontal bands in distant stone.
  if a==0 or b==0 then return d>=3 and (a<5 or a>12) and 0 or 1 end
  -- Chipped corners, recessed lower edges, and short branching fractures.
@@ -1051,13 +1094,22 @@ function draw_ground(ceiling)
  local yb=ceiling and view_cy-1 or vy1
  for y=ya,yb do
   local dist=abs(y-view_cy)
-  local z=(ceiling and 16.5 or 21)/max(1,dist)
+  local z=(ceiling and 16.5 or 22)/max(1,dist)
   local world_z=(z-.25)*2
   for x=vx0,vx1 do
    local u=(x-view_cx)*z/38*32
    local v=world_z*32
    local d=ceiling and max(2,world_z+.5) or world_z+.5
-   pset(x,y,stone(u,v,d,not ceiling and z<1 and abs(x-view_cx)<20))
+   local c=stone(u,v,d,not ceiling and z<1 and abs(x-view_cx)<20)
+   if theme==1 then
+    -- Quiet slabs and a darker vault separate the walkable floor from walls.
+    local seam=flr(u+flr(v/32)*16)%32==0 or flr(v)%32==0
+    c=seam and 1 or (ceiling and 1 or 2)
+    if ceiling and seam and flr(u)%8<3 then c=0 end
+    if not ceiling and not seam and flr(v)%32==1 then c=5 end
+    if not ceiling and not seam and (flr(u/3)*7+flr(v/3)*11)%43==0 then c=14 end
+   end
+   pset(x,y,c)
   end
   darken(vx0,y,vx1,y,world_z)
  end
@@ -1074,15 +1126,12 @@ end
 
 function draw_view_frame()
  rect(vx0-1,vy0-1,vx1+1,vy1+1,5)
- panel(0,0,127,9,0,13)
- print("o u b l i e t t e",30,3,13)
- draw_sprite(sp_torch,21,1,8,8,false)
- draw_sprite(sp_torch2,99,1,8,8,false)
+ rectfill(0,0,127,6,0)
+ print("oubliette",45,1,6)
  if state!="title" then
-  print("lv",3,3,10)
-  print(short_n(lvl),13,3,7)
-  print("f"..short_n(floor_n),109,3,3)
-  print(dnames[dir],122,3,13)
+  print("lv"..short_n(lvl),2,1,6)
+  print("f"..short_n(floor_n),106,1,6)
+  print(dnames[dir],122,1,10)
  end
 end
 
@@ -1106,7 +1155,7 @@ function draw_opening(x,y,ceiling,ox,oy)
  local id=ceiling and sp_shaft or sp_grate
  palt(0,false)
  for sy=ya,yb do
-  local z=(ceiling and 16.5 or 21)/abs(sy-view_cy-oy)
+  local z=(ceiling and 16.5 or 22)/abs(sy-view_cy-oy)
   local forward=(z-.25)*2
   local v=(forward-d)/radius
   if abs(v)<1 then
@@ -1140,6 +1189,8 @@ function draw_world_mon(m,r,d)
  local s=max(6,flr(sizes[m.t]*scale/view_z(d)))
  local cy=r[4]-s/2-3
  if m.t==3 or m.t==6 then cy-=max(2,7-d) end
+ if m.t==6 then cy-=idle_frame end
+ if m.t==1 then cx+=idle_frame end
  ovalfill(cx-s/2,cy+s/2-2,cx+s/2,cy+s/2+1,1)
  draw_sprite(mon_spr[m.t],cx-s/2,cy-s/2,s,s,m.elite)
  if m.elite then
@@ -1163,10 +1214,10 @@ function draw_sprite(id,x,y,w,h,elite)
  local sw=big_spr[id] and 16 or 8
  if elite then
   for c=1,15 do pal(c,8) end
-  sspr((id%16)*8,flr(id/16)*8,sw,sw,x-1,y,w,h)
-  sspr((id%16)*8,flr(id/16)*8,sw,sw,x+1,y,w,h)
-  sspr((id%16)*8,flr(id/16)*8,sw,sw,x,y-1,w,h)
-  sspr((id%16)*8,flr(id/16)*8,sw,sw,x,y+1,w,h)
+  for offset=-1,1,2 do
+   sspr((id%16)*8,flr(id/16)*8,sw,sw,x+offset,y,w,h)
+   sspr((id%16)*8,flr(id/16)*8,sw,sw,x,y+offset,w,h)
+  end
   pal()
  end
  sspr((id%16)*8,flr(id/16)*8,sw,sw,x,y,w,h)
@@ -1175,27 +1226,23 @@ function draw_sprite(id,x,y,w,h,elite)
 end
 
 function draw_hud()
- panel(0,84,23,108,1,13)
- draw_sprite(sp_avatar,4,86,16,16,false)
- print("you",6,103,10)
- panel(25,84,77,108,0,13)
- print("hp",28,87,8)
- print(hp.."/"..maxhp,40,87,7)
- bar(28,93,46,3,hp/maxhp,8)
- print("xp",28,98,12)
- print(xp.."/"..lvl*10,40,98,7)
- bar(28,104,46,3,xp/(lvl*10),12)
- panel(79,84,127,108,0,13)
+ rectfill(0,93,127,127,0)
+ print("hp "..hp.."/"..maxhp,2,94,7)
+ bar(2,101,57,3,hp/maxhp,8)
+ print("xp "..xp.."/"..lvl*10,67,94,6)
+ bar(67,101,58,3,xp/(lvl*10),12)
  local ids={sp_sword,sp_shield,sp_ration,sp_potion,sp_key,sp_coin}
  local ns={notches,def,food,pots,keys,gold}
  for i=1,6 do
-  local x=81+(i-1)%3*15
-  local y=85+flr((i-1)/3)*11
-  rect(x,y,x+13,y+11,5)
-  draw_sprite(ids[i],x+1,y+1,8,8,false)
-  print(short_n(ns[i]),x+6,y+6,7)
+  local x=2+(i-1)*21
+  draw_sprite(ids[i],x,106,8,8,false)
+  print(short_n(ns[i]),x+9,108,7)
  end
- print("arrows move z use x actions",12,123,5)
+ if shield_t>0 then
+  rectfill(40,83,87,90,0)
+  print("shield -"..shield_loss,43,85,10)
+ end
+ if msg_t<=0 then print("arrows move  z use  x menu",14,120,5) end
 end
 
 function bar(x,y,w,h,v,c)
@@ -1218,14 +1265,13 @@ function draw_atlas_frame(id,x1,y1,x2,y2,c)
  local mh=max(1,y2-y1-5)
  palt(0,true)
  pal(13,c)
- sspr(sx,sy,3,3,x1,y1,3,3)
- sspr(sx+5,sy,3,3,x2-2,y1,3,3)
- sspr(sx,sy+5,3,3,x1,y2-2,3,3)
- sspr(sx+5,sy+5,3,3,x2-2,y2-2,3,3)
- sspr(sx+3,sy,2,3,x1+3,y1,mw,3)
- sspr(sx+3,sy+5,2,3,x1+3,y2-2,mw,3)
- sspr(sx,sy+3,3,2,x1,y1+3,3,mh)
- sspr(sx+5,sy+3,3,2,x2-2,y1+3,3,mh)
+ for i=0,1 do
+  for j=0,1 do
+   sspr(sx+i*5,sy+j*5,3,3,x1+i*(x2-x1-2),y1+j*(y2-y1-2),3,3)
+  end
+  sspr(sx+3,sy+i*5,2,3,x1+3,y1+i*(y2-y1-2),mw,3)
+  sspr(sx+i*5,sy+3,3,2,x1+i*(x2-x1-2),y1+3,3,mh)
+ end
  pal()
  palt()
 end
@@ -1238,17 +1284,17 @@ end
 function draw_msg()
  if msg_t>0 then
   local text=">"
-  local y=111
+  local y=114
   for word in all(split(msg," ",false)) do
    if #text+#word>30 then
-    print(text,2,y,10)
+    print(text,2,y,6)
     text=""
     y+=6
-    if y>117 then return end
+    if y>120 then return end
    end
    text=text..word.." "
   end
-  print(text,2,y,10)
+  print(text,2,y,6)
  end
 end
 
@@ -1308,22 +1354,22 @@ function sgn(v)
 end
 
 __gfx__
-000000000000000000000000000000000000000000000000000000555000000000000000000000000000000200000000000000dddd000000000000dddd000000
-0000000000000000000000000000000000000000000000000000056765000000000000333000000000000025200000000000ddd50ddd00000000dddeeddd0000
-0000000000000000000000000000000020000000000000020000566666500000000003bb33000000000002555200000000de00050005dd0000deee1111eedd00
-000044000004400000000000000000002200000000000022000066060660000000003b0b0b300000000025555520000000d5000500050d0000de11000011ed00
-0004ff40004ff40000000333330000002520002002000252000006606600000000003bbbbb30000000002500052000000d565556555655d00de1000000001ed0
-000455544455540000003bbbbb30000025520052250025520000006760000000000003f0f30000000002550a052200000d040005000500d00de1000000001ed0
-00455555555554000003b7bbbbb300002555225555225552000665666566000000004433344000000002550005520000dd050005000500dddd100000000001dd
-0455655555555400003bbbbb3bbb30000255552885555520006506060606500000044333334400000002255555220000d005000aa005000dde100000000001ed
-0456555555855f40003bbb03b03b300000255555555552000060056665006550003404333404300000255222225520005556555a155655555e100000000001e5
-445555555555fff4003bbb03b03b300000025555555520000650060606055455003404333404360000252555552520005505000aa00400555510000000000155
-0044455444444440003bbbbbbbbb3000000022f55f220000060005666505464500340444440066600025225552252000050500050005005005e1000000001e50
-00045f400045f400003bbb333bbb30000000002552000000650000656005545500030344430006000002225552220000050500050005005005e1000000001e50
-00044400000444000033bbb3bbb3300000000002200000006000006060005550000003303300040000025225225200000056555655565500005e11000011e500
-000000000000000003333bbbbb3333000000000000000000000000606000000000000340430000000022522522522000005e000500055500005eee1111ee5500
-0000000000000000003333333333300000000000000000000000065056000000000044404440000000220220220220000000555505e500000000555ee5e50000
-000000000000000000000000000000000000000000000000000066505660000000000000000000000000000000000000000000e555000000000000e555000000
+000000000000000000000000000000000000000000000000000000555000000000000000000000000000000110000000000000dddd000000000000dddd000000
+0000000000000000000000000000000000000000000000000000056765000000000000333000000000000116610000000000ddd50ddd00000000dddeeddd0000
+0000000000000000000000000000000020000000000000020000566666500000000003bb33000000000016667610000000de00050005dd0000deee1111eedd00
+000000000000000000000000000000002200000000000022000066060660000000003b0b0b300000000166006661000000d5000500050d0000de11000011ed00
+000000004400000000000333330000002520002002000252000006606600000000003bbbbb30000000016080086100000d565556555655d00de1000000001ed0
+00004444e640000000003bbbbb30000025520052250025520000006760000000000003f0f300000000016600066100000d040005000500d00de1000000001ed0
+00045666564000000003b7bbbbb300002555225555225552000665666566000000004433344000000000160066100000dd050005000500dddd100000000001dd
+0045665555440000003bbbbb3bbb30000255552885555520006506060606500000044333334400000001161161100000d005000aa005000dde100000000001ed
+0456555545874000003bbb03b03b30000025555555555200006005666500655000340433340430000016c1111c6100005556555a155655555e100000000001e5
+0455555444556400003bbb03b03b3000000255555555200006500606060554550034043334043600016c111111c610005505000aa00400555510000000000155
+0044444444466e00003bbbbbbbbb3000000022f55f2200000600056665054645003404444400666016c01111110c6100050500050005005005e1000000001e50
+ee04444444044000003bbb333bbb30000000002552000000650000656005545500030344430006001600111111006100050500050005005005e1000000001e50
+0ee440044000ee000033bbb3bbb3300000000002200000006000006060005550000003303300040010001c11c10001000056555655565500005e11000011e500
+000ee00ee000000003333bbbbb33330000000000000000000000006060000000000003404300000000001c01c1000000005e000500055500005eee1111ee5500
+00000000000000000033333333333000000000000000000000000650560000000000444044400000000010001c0000000000555505e500000000555ee5e50000
+000000000000000000000000000000000000000000000000000066505660000000000000000000000000000001000000000000e555000000000000e555000000
 0006600000000000000aa000000000600055550000033000000000001222222100000000000a000000090000000ff00000000000000000000000000000000000
 00077000000aa00000a99a000000067005666550003bb300000000001252525100000000009a900000aaa00000f99f0000040000000000000000000000000000
 0016610000a00a000a9aa9a0000067605667766503b7bb3000000000125252510000000000aaa000009a900000f99f0000404000000000000001111111111100
