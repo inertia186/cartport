@@ -66,12 +66,12 @@ mon_spr={sp_rat,sp_slime,sp_bat,sp_skel,sp_gob,sp_wraith}
 item_spr={sp_potion,sp_key,sp_coin,sp_sword,sp_shield,sp_ration,sp_chest}
 
 mon_db={
- {n="rat",c=4,h=4,a=1,xp=2},
- {n="slime",c=11,h=6,a=2,xp=3},
- {n="bat",c=5,h=5,a=2,xp=4},
- {n="skel",c=6,h=8,a=3,xp=5},
- {n="gob",c=8,h=10,a=4,xp=7},
- {n="wraith",c=2,h=14,a=5,xp=10}
+ {n="rat",c=4,h=4,a=1,xp=2,breakage=.05},
+ {n="slime",c=11,h=6,a=2,xp=3,breakage=0},
+ {n="bat",c=5,h=5,a=2,xp=4,breakage=.10},
+ {n="skel",c=6,h=8,a=3,xp=5,breakage=.20},
+ {n="gob",c=8,h=10,a=4,xp=7,breakage=.30},
+ {n="wraith",c=2,h=14,a=5,xp=10,breakage=.40}
 }
 
 g={}
@@ -232,6 +232,7 @@ function new_floor()
  place_grate()
  place_loot(6+flr(floor_n*.8))
  place_mons(5+floor_n*2)
+ place_prisoner()
  px=1
  py=1
  arrival={x=px,y=py}
@@ -266,6 +267,7 @@ function open_cell(x,y)
 end
 
 function fill_map()
+ prisoner=nil
  for y=0,mh-1 do
   for x=0,mw-1 do
    set_cell(x,y,tiles.wall)
@@ -357,6 +359,53 @@ function free_floor()
  return p[1],p[2]
 end
 
+function place_prisoner()
+ prisoner=nil
+ if rnd()>=.5 then return end
+ local choices={}
+ for y=1,mh-2 do
+  for x=1,mw-2 do
+   if cell(x,y)==tiles.floor and x+y>10 then
+    local exits=0
+    for v in all(dirs) do
+     if open_cell(x+v[1],y+v[2]) then exits+=1 end
+    end
+    if exits<=2 then
+     for v in all(dirs) do
+      local wx,wy=x+v[1],y+v[2]
+      if cell(wx,wy)==tiles.wall then
+       local neighbors=0
+       for w in all(dirs) do
+        if open_cell(wx+w[1],wy+w[2]) then neighbors+=1 end
+       end
+       if neighbors==1 then add(choices,{x=wx,y=wy,key=id(wx,wy)*2+(v[2]!=0 and 1 or 0),trader=true}) end
+      end
+     end
+    end
+   end
+  end
+ end
+ if #choices==0 then return end
+ prisoner=rnd(choices)
+ local offer=rnd({{1,"potion",18},{2,"iron key",25},{4,"blade notch",30},{5,"shield",30},{6,"ration",10}})
+ prisoner.t=offer[1] prisoner.name=offer[2] prisoner.price=offer[3]
+end
+
+function prisoner_at(x,y)
+ return prisoner and prisoner.x==x and prisoner.y==y
+end
+
+function buy_prisoner_item()
+ if action_lock.sold then return end
+ if gold<action_lock.price then
+  say("not enough gold") state="actions" return
+ end
+ gold-=action_lock.price
+ action_lock.sold=true
+ take_item(action_lock)
+ tick()
+end
+
 function place_grate()
  -- Breadth-first order measures actual walking distance through the rooms.
  local queue={{1,1}}
@@ -431,6 +480,7 @@ function walk(step)
  end
 
  if not open_cell(nx,ny) then
+  if step>0 and prisoner_at(nx,ny) then open_actions(prisoner) return end
   shake=6
   say("stone refuses you")
   sfx(1)
@@ -464,6 +514,7 @@ function use_z()
  end
 
  local x,y=front(1,0)
+ if prisoner_at(x,y) then open_actions(prisoner) return end
  local m=monster_at(x,y)
  if m then
   hit_monster(m)
@@ -499,9 +550,15 @@ end
 function open_actions(lock)
  action_lock=lock
  action_list={}
- if lock then
+ if lock and lock.trader then
+  say("thrown in, like you. gold buys hope.")
+  if not lock.sold then
+   add(action_list,{n="buy "..lock.name,hint=lock.price.." gold / one item",free=gold<lock.price,run=buy_prisoner_item})
+  end
+  add(action_list,{n="leave",hint=lock.sold and "nothing left, friend" or "keep your gold",free=true,run=function() end})
+ elseif lock then
   add(action_list,{n="use a key",hint=keys>0 and (lock.grate and "1 key / descend" or "1 key / open the chest") or "no keys",free=keys<=0,run=use_lock_key})
-  add(action_list,{n="break the lock",hint="10% chance each attempt",run=break_lock})
+  add(action_list,{n="break the lock",hint=lock_break_hint(),run=break_lock})
   add(action_list,{n="leave",hint="leave it locked",free=true,run=function() end})
  else
   if food>0 then
@@ -599,13 +656,28 @@ function use_lock_key()
  open_lock()
 end
 
+function lock_break_chance()
+ return min(75,10+notches*5)
+end
+
+function lock_break_hint()
+ return lock_break_chance().."% open / "..(notches>0 and "25% loss" or "no notches")
+end
+
 function break_lock()
- if rnd()<.1 then
+ local opened=rnd()<lock_break_chance()/100
+ local broken=notches>0 and rnd()<.25
+ if broken then notches-=1 end
+ if opened then
   open_lock()
  else
   tick("lock holds")
-  if state!="dead" then state="actions" end
+  if state!="dead" then
+   action_list[2].hint=lock_break_hint()
+   state="actions"
+  end
  end
+ if broken then say(msg.." / notch -1") end
 end
 
 function open_lock()
@@ -681,6 +753,10 @@ function monsters_act()
      hp-=dmg
      shake=5
      say(mon_db[m.t].n..(exposed and " flanks -" or " hits -")..dmg)
+     if def>0 and m.t!=2 and rnd()<min(.75,mon_db[m.t].breakage+max(0,m.atk-mon_db[m.t].a)*.05+(m.elite and .10 or 0)) then
+      def-=1
+      say(msg.." / shield -1")
+     end
      sfx(1)
     elseif d<7 and has_line(m.x,m.y,px,py) then
      m.wake=70
@@ -828,10 +904,11 @@ function draw_view()
   else
    sspr(bank*32+u+(warm and 16 or 0),48,1,32,sx,top,1,bottom-top+1)
   end
+  if prisoner and hit.key==prisoner.key then draw_prisoner_door(sx,top,bottom,hit.u) end
   darken(sx,top,sx,bottom,hit.d)
   wall_depth[sx]=hit.d
   wall_keys[sx]=hit.key
-  if warm and not torches[hit.key] then
+  if warm and not torches[hit.key] and not (prisoner and hit.key==prisoner.key) then
    torches[hit.key]=true
    local f=dirs[dir]
    local right=dirs[dir%4+1]
@@ -862,6 +939,22 @@ function draw_view()
  end
  for o in all(objects) do draw_visible_object(o) end
  draw_view_frame()
+end
+
+function draw_prisoner_door(x,top,bottom,u)
+ if u<.15 or u>.85 then return end
+ local h=bottom-top
+ rectfill(x,top+h*.12,x,bottom,0)
+ if u<.2 or u>.8 then return end
+ rectfill(x,top+h*.16,x,bottom,flr(u*16)%3==0 and 1 or 4)
+ for v in all({.3,.72}) do rectfill(x,top+h*v,x,top+h*(v+.035),5) end
+ if u>.34 and u<.66 then
+  rectfill(x,top+h*.32,x,top+h*.52,0)
+  if u>.4 and u<.6 then rectfill(x,top+h*.37,x,top+h*.48,15) end
+  if (u>.42 and u<.46) or (u>.54 and u<.58) then rectfill(x,top+h*.4,x,top+h*.42,0) end
+  if flr(u*32)%4==0 then rectfill(x,top+h*.32,x,top+h*.52,5) end
+ end
+ if u>.7 and u<.75 then rectfill(x,top+h*.59,x,top+h*.64,10) end
 end
 
 function cast_wall(sx)
@@ -1163,8 +1256,8 @@ function draw_actions()
  local footer=30+#action_list*10
  -- Shared overlay colours keep the palette boundary invisible.
  panel(11,12,117,footer+21,0,5)
- print(action_lock and (action_lock.grate and "grate" or "chest") or "actions",18,16,7)
- print(action_lock and "keys "..short_n(keys) or "food "..short_n(food),83,16,6)
+ print(action_lock and (action_lock.trader and "prisoner" or action_lock.grate and "grate" or "chest") or "actions",18,16,7)
+ print(action_lock and (action_lock.trader and "gold "..short_n(gold) or "keys "..short_n(keys)) or "food "..short_n(food),83,16,6)
  line(18,24,110,24,5)
  for i=1,#action_list do
   local a=action_list[i]

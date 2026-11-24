@@ -54,6 +54,39 @@ rnd=function(n) return (n or 1)*.5 end
 state="play" break_lock()
 rnd=original_rnd
 '''
+scenes["lock-notches"] = 'notches=2 items={{x=5,y=9,t=7}} open_actions(items[1]) action_index=2'
+scenes["lock-notch-lost"] = scenes["lock-notches"] + '''
+local original_rnd=rnd
+rnd=function() return .2 end
+state="play" break_lock()
+rnd=original_rnd
+'''
+for depth, name in ((1, "near"), (2, "middle"), (3, "far")):
+    scenes[f"prisoner-{name}"] = f'''
+set_cell(5,{10-depth},tiles.wall)
+prisoner={{x=5,y={10-depth},key=id(5,{10-depth})*2+1,trader=true,t=4,name="blade notch",price=30}}
+msg="a face behind the bars."
+'''
+scenes["prisoner-offer"] = scenes["prisoner-near"] + 'gold=42 use_z()'
+scenes["prisoner-poor"] = scenes["prisoner-near"] + 'gold=0 use_z() state="play" buy_prisoner_item()'
+scenes["prisoner-sold"] = scenes["prisoner-near"] + 'gold=42 use_z() state="play" buy_prisoner_item() use_z()'
+scenes["prisoner-side"] = '''
+set_cell(4,9,tiles.wall)
+prisoner={x=4,y=9,key=id(4,9)*2,trader=true,t=4,name="blade notch",price=30}
+msg="a door in the side wall."
+'''
+scenes["prisoner-generated"] = '''
+srand(1) new_run()
+while not prisoner do new_run() end
+for i=1,4 do
+ local v=dirs[i]
+ if open_cell(prisoner.x+v[1],prisoner.y+v[2]) then
+  px=prisoner.x+v[1] py=prisoner.y+v[2] dir=(i+1)%4+1
+  break
+ end
+end
+msg="a door off the beaten path."
+'''
 scenes["elite"] = 'mons={{x=5,y=8,t=4,hp=4,mhp=8,elite=true}}'
 for mass in (2, 3, 4):
     scenes[f"slime-x{mass}"] = f'mons={{{{x=5,y=9,t=2,hp={7*mass},mhp={7*mass},atk={2*mass},mass={mass},wake=0}}}} msg="slimes combine x{mass}"'
