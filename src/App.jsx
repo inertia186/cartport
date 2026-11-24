@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { installPico8KeyboardNavigation } from './pico8Keyboard';
 
 const PLAYTEST_WIDTH = 256;
 const PLAYTEST_HEIGHT = 160;
@@ -528,10 +529,30 @@ function PlayerChrome({ children, note }) {
 }
 
 function LocalExportPlayer({ gameTitle, player, note }) {
+  const frameRef = useRef(null);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    let cleanup = () => {};
+    const onLoad = () => {
+      cleanup();
+      cleanup = installPico8KeyboardNavigation(frame, gameTitle, () => {
+        frame.closest('.selector-grid')?.querySelector('.game-list-item.active')?.focus();
+      });
+    };
+    frame.addEventListener('load', onLoad);
+    onLoad();
+    return () => {
+      frame.removeEventListener('load', onLoad);
+      cleanup();
+    };
+  }, [gameTitle, player.src]);
+
   return (
     <PlayerChrome note={note ? <><code>{player.src}</code></> : null}>
       <div className="embed-frame">
         <iframe
+          ref={frameRef}
           key={`${gameTitle}-${player.src}-${__CARTPORT_BUILD_ID__}`}
           src={withCacheBust(player.src)}
           title={gameTitle}
@@ -539,6 +560,7 @@ function LocalExportPlayer({ gameTitle, player, note }) {
           allowFullScreen
         />
       </div>
+      <p className="player-keyboard-hint">Press Enter or Space on Play to start. Tab returns to the cartridge shelf.</p>
     </PlayerChrome>
   );
 }
@@ -721,6 +743,7 @@ function App() {
                     key={game.id}
                     type="button"
                     className={`game-list-item${isActive ? ' active' : ''}`}
+                    aria-pressed={isActive}
                     onClick={() => setSelectedGameId(game.id)}
                   >
                     <span className="genre">{game.genre}</span>

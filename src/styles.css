@@ -433,6 +433,13 @@ select {
   color: #c8bfe7;
 }
 
+.player-keyboard-hint {
+  margin: 0;
+  color: #c8bfe7;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 .player-note code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   color: #f4f1ff;
