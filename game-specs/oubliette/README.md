@@ -4,9 +4,9 @@ Oubliette is Cartport slot 03: a PICO-8-first, turn-by-turn first-person dungeon
 
 ## Design target
 
-- Top strip: title, level, floor, and heading.
-- Center: full-width first-person dungeon view with its own palette.
-- Bottom: portrait, HP/XP, six inventory icons, messages, and compact control hints.
+- Small top strip: title, level, floor, and heading.
+- Center: full-width first-person dungeon view with its own palette, rows 8–91.
+- Bottom: HP/XP, six inventory icons, and two message lines. Control hints appear when the message expires.
 - Loop: explore a generated labyrinth, fight monsters, collect supplies, unlock an oubliette grate, descend, repeat.
 
 ## Controls
@@ -28,6 +28,50 @@ Oubliette is Cartport slot 03: a PICO-8-first, turn-by-turn first-person dungeon
 
 ## Glow-up build
 
+### Crypt visual slice (2026-11-21, visuals approved; gameplay integrated)
+
+The first slice follows the agreed direction: improve readability in an oppressive,
+weathered dungeon with warm torchlight, preserving the existing turn-based rules.
+The viewport grows from 72 to 84 pixels tall. A compact HUD replaces the portrait
+panel and keeps health, XP, supplies, and messages visible. Large counts and the
+three-choice lock menu are included in the native proofs.
+
+Crypt stone retains chipped edges and short fractures, with quieter wall grain,
+distinct floor slabs, a dark vault, and occasional hanging iron links. Other
+themes retain their previous materials. The rat has a low body, pointed muzzle,
+and trailing tail; the wraith has a hollow hood and hanging, separated limbs.
+Those two shared sprites are the creature art examples for this slice.
+
+Turns and steps resolve immediately, followed by a six-frame camera settle.
+This is a small visual offset, not interpolated traversal of the grid. New input
+can replace it immediately. Rat/wraith idle poses use a deterministic animation
+clock. Outgoing slashes and incoming damage borders coexist for ten frames;
+they do not consume gameplay RNG or advance enemies. A separate shield-loss
+badge survives later enemy messages and displays the loss count for 45 frames.
+The resource-tradeoff gameplay from `135d53a` is integrated: prisoner trading,
+notch-based lock odds and wear, and species-dependent shield wear. The badge
+is verified against the real seed-7 purchase reproduction: the rat breaks the
+new shield, the slime attacks afterwards, and the shield loss remains visible.
+
+Matching native renders are in `visual-proof/crypt-slice/` and its `before/`
+directory. Anthony approved the visual updates. The remaining theme materials
+and creature art have not been expanded.
+Native regression checks establish mechanics, rendering, input, and timing;
+they do not establish full-run balance. All 21 native groups and 64 layout seeds
+pass. Unused theme/color metadata and repeated drawing calls were condensed to
+fit the integrated cartridge within PICO-8's token limit. A full, unpruned cart
+startup/draw smoke test passes; test/render fixtures retain unchanged reachable
+function bodies so their extra instrumentation also fits the limit.
+
+Reproduce the slice with:
+
+```sh
+python3 scripts/render-oubliette.py --output game-specs/oubliette/visual-proof/crypt-slice --scenes crypt wide-room junction room-corner rat wraith chest-near grate-near grate-menu hud-counts walk-feedback turn-feedback hit-feedback shield-feedback controls
+make run CART=oubliette
+```
+
+### Existing cartridge architecture
+
 `pico8/oubliette/oubliette.p8` has been rebuilt as a clean, self-contained cart rather than an incremental patch over the first prototype.
 
 The gameplay intent is unchanged: Oubliette is still a turn-by-turn first-person dungeon crawler about descending floor after floor, managing dwindling supplies, and surviving a hostile maze.
@@ -44,8 +88,8 @@ Current shape:
 - Inventory and progression for HP, XP, level, gold, potions, keys, rations, attack, and defense.
 - The blade inventory slot counts collected notches, starting at zero. Each adds +1 melee damage while held. A throw consumes exactly one notch and deals exactly 1 damage, without base attack, level, randomness, or elite modifiers. Bump attacks remain melee and do not consume notches. Throws spend one turn and use normal enemy death/reward handling; no target means no notch is spent.
 - Locked chests with a choice to spend a key, risk repeated lock-breaking attempts, or leave. Opening one produces gold plus a useful stat/supply bump.
-- Persistent title header and a compact bottom HUD with framed status bars, a six-cell icon inventory, and an authored sword-and-shield avatar; development telemetry and the minimap are intentionally omitted.
-- Two message lines and compact arrow/`Z`/`X` hints replace the large D-pad.
+- Persistent title header and a compact bottom HUD with framed status bars and a six-icon inventory; development telemetry and the minimap are intentionally omitted.
+- Two message lines share space with idle arrow/`Z`/`X` hints.
 
 Implementation stance:
 
@@ -54,7 +98,7 @@ Implementation stance:
 - Wall rendering traces each viewport column through the full tile grid to its first solid face. Room boundaries, exposed end faces, and receding sides therefore reflect the carved map rather than a stack of corridor planes. Actors and items are clipped against those wall distances; torches stay on their own wall faces.
 - Grates and arrival shafts use 16×16 textures projected onto the floor and ceiling with native sprite strips. The grate has iron crossbars and a brass lock over a dark pit. The open shaft stays above the arrival tile as the player moves and turns; its wide rim remains partly visible directly overhead. Both openings draw before walls for occlusion and use the existing distance fade. They never enter the cached backdrop or consume gameplay RNG.
 - The view is anchored to the player's current tile. An adjacent wall's near boundary is half a tile away. Actors and objects project at tile centers, and floor/ceiling coordinates use the same eye position and focal scale.
-- The viewport spans columns 1–126 and rows 11–82. Its wider field of view retains the tuned focal scale and tile spacing; geometry and objects share the new center. Objects up to four cells to either side are considered for the wider view.
+- The viewport spans columns 1–126 and rows 8–91, centered at (64,47). Its wider field of view retains the tuned horizontal focal scale and tile spacing; geometry and objects share the new center. Objects up to four cells to either side are considered for the wider view.
 - Visual depth is compressed after the adjacent boundary: a wall one move away is half the adjacent wall's width, rather than one third. `view_z()` defines that artistic spacing for walls, actors, and objects; floor and ceiling mapping invert it. Movement, collision, and attack distances remain grid-based. Mid-distance stone retains its base color to avoid reading as a more distant wall.
 - The native 128×128 sprite sheet holds actors/items in rows 0–31, legacy environment textures and decals in rows 32–47, the 16×16 avatar in rows 80–95, and UI frame pieces in rows 96–103.
 - Rows 48–79 are reserved for generated masonry strips: four depth levels with cold and torch-lit variants. Wall columns sample these strips at their world intersection coordinates, keeping masonry continuous around corners. Plain walls no longer imply a usable gate.
@@ -65,8 +109,8 @@ Implementation stance:
 - Floor and ceiling retain the original masonry scale and converge toward the horizon. Their backdrop is cached in RAM `0x8000..0x9fff` and rebuilt with the masonry strips when the theme changes. This memory range is reserved for rendering.
 - Walls, floor, and ceiling fade into black from two to eight tiles away using 16 stable coverage steps. Wall fading uses the actual ray distance, including distances beyond the four texture bands. The native fill pattern darkens existing pixels without changing the masonry; nearby detail, torches, and gameplay sprites remain readable.
 - Screen shake, stone grain, and two-frame torch animation do not consume gameplay RNG.
-- Native scanline palette switching (`0x5f5f`, `0x5f70..0x5f7f`) gives rows 11–82 the dungeon palette while the title strip and bottom HUD retain the UI palette. Stone gains a warm highlight and brown shadow tone; world blues and skin tones also have their own mappings. Both display palettes are applied after sprite blits and masonry blending reset them. The title and death overlays use shared colors so they can cross the palette boundary without a visible seam.
-- A dirty-view flag limits the heavier masked redraw to state changes, shake frames, message changes, and the low-frequency torch tick.
+- Native scanline palette switching (`0x5f5f`, `0x5f70..0x5f7f`) gives rows 8–91 the dungeon palette while the title strip and bottom HUD retain the UI palette. Stone gains a warm highlight and brown shadow tone; world blues and skin tones also have their own mappings. Both display palettes are applied after sprite blits and masonry blending reset them. The title and death overlays use shared colors so they can cross the palette boundary without a visible seam.
+- A dirty-view flag limits the heavier masked redraw to state changes, short visual effects, message changes, and low-frequency torch/creature ticks.
 - Turn resolution is intentionally explicit: player input -> action result -> monster phase -> death check. Every spent turn includes the monster phase, including rotations. Only one player action is accepted per update, so simultaneous inputs cannot act again after a fatal turn.
 - Slimes combine opportunistically with an adjacent partner that has not acted yet, staying on the survivor's tile. Absorption grants no kill rewards. Defeating the survivor scales XP and gold by the number of combined slimes, with the usual single potion-drop chance. Projected size grows with the square root of that count, capped at twice normal size; health and attack continue adding beyond the visual cap.
 - The action menu is a list of names, hints, and action functions assembled on opening. Chests and grates share the same lock choices and resolution, with hints distinguishing free choices from enemy turns. The compact overlay leaves HP and messages visible below it. Confirm/cancel keys must be released after menu transitions before they can act again.
@@ -74,7 +118,7 @@ Implementation stance:
 
 ## Visual verification
 
-`visual-proof/prisoner/` shows the door at three distances, on a side wall, and in a generated floor, plus the offer, insufficient-gold, and sold-out menus. Reproduce with `python3 scripts/render-oubliette.py --output game-specs/oubliette/visual-proof/prisoner --scenes prisoner-near prisoner-middle prisoner-far prisoner-side prisoner-offer prisoner-poor prisoner-sold prisoner-generated`. Native checks cover 64 seeded placements, the spawn boundary, all five items, stable stock, purchases and enemy turns, free choices, held keys, sold-out state, door orientation/occlusion, RNG preservation, and rendering cost. Native check carts include unchanged function bodies reachable from each fixture, and split menu rendering from input checks, to fit PICO-8's token limit; exports and visual proofs use the full cart.
+`visual-proof/prisoner/` shows the door at three distances, on a side wall, and in a generated floor, plus the offer, insufficient-gold, and sold-out menus. Reproduce with `python3 scripts/render-oubliette.py --output game-specs/oubliette/visual-proof/prisoner --scenes prisoner-near prisoner-middle prisoner-far prisoner-side prisoner-offer prisoner-poor prisoner-sold prisoner-generated`. Native checks cover 64 seeded placements, the spawn boundary, all five items, stable stock, purchases and enemy turns, free choices, held keys, sold-out state, door orientation/occlusion, RNG preservation, and rendering cost. Native check carts include unchanged function bodies reachable from each fixture, and split menu rendering from input checks, to fit PICO-8's token limit; exports use the full cart.
 
 `visual-proof/lock-notches/` shows boosted lock odds, the reduced odds and message after a notch breaks, and the zero-notch grate choice. Reproduce with `python3 scripts/render-oubliette.py --output game-specs/oubliette/visual-proof/lock-notches --scenes lock-notches lock-notch-lost grate-menu-break`. Native checks cover both lock types, the success floor/cap, independent notch loss on success or failure, pre-loss odds, rewards/descent, and retry hints. Slime gameplay and rendering checks run in separate temporary carts to stay within PICO-8's token limit.
 

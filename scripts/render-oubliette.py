@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+from pico8_check_cart import check_cart
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -29,6 +30,11 @@ scenes = {name: f"theme={i}" for i, name in enumerate(("crypt", "moss", "brick",
 for i, name in enumerate(("rat", "slime", "bat", "skeleton", "goblin", "wraith"), 1):
     scenes[name] = f'mons={{{{x=5,y=9,t={i},hp=8,mhp=8,elite=false}}}}\nmsg="{name} blocks the way."'
 scenes["junction"] = "set_cell(4,9,tiles.floor) set_cell(6,8,tiles.floor)"
+scenes["walk-feedback"] = "walk(1)"
+scenes["turn-feedback"] = "turn_right()"
+scenes["hit-feedback"] = 'mons={{x=5,y=9,t=1,hp=100,mhp=100,atk=2,wake=0}} hit_monster(mons[1],1)'
+scenes["shield-feedback"] = 'shield_t=45 shield_loss=2 msg="slime flanks -4"'
+scenes["controls"] = 'msg_t=0'
 scenes["adjacent-wall"] = "set_cell(5,9,tiles.wall)"
 scenes["wall-one-step-away"] = "set_cell(5,8,tiles.wall)"
 scenes["passage-beside-player"] = "set_cell(4,10,tiles.floor)"
@@ -70,6 +76,15 @@ msg="a face behind the bars."
 scenes["prisoner-offer"] = scenes["prisoner-near"] + 'gold=42 use_z()'
 scenes["prisoner-poor"] = scenes["prisoner-near"] + 'gold=0 use_z() state="play" buy_prisoner_item()'
 scenes["prisoner-sold"] = scenes["prisoner-near"] + 'gold=42 use_z() state="play" buy_prisoner_item() use_z()'
+scenes["shield-purchase"] = '''
+fill_map() px=9 py=9 dir=1 gold=30 def=0 hp=26
+for x=8,10 do for y=9,10 do set_cell(x,y,tiles.floor) end end
+prisoner={x=9,y=8,key=id(9,8)*2+1,trader=true,t=5,name="shield",price=30}
+mons={{x=8,y=9,t=1,hp=5,mhp=5,atk=1,wake=0},
+ {x=10,y=9,t=2,hp=7,mhp=7,atk=2,wake=0}}
+open_actions(prisoner)
+srand(7) state="play" buy_prisoner_item()
+'''
 scenes["prisoner-side"] = '''
 set_cell(4,9,tiles.wall)
 prisoner={x=4,y=9,key=id(4,9)*2,trader=true,t=4,name="blade notch",price=30}
@@ -172,7 +187,7 @@ extcmd("screen",4)
 _init=nil _draw=nil _update60=nil
 '''
         cart = Path(tmp) / f"{name}.p8"
-        cart.write_text(source.replace("__gfx__", fixture + "\n__gfx__", 1))
+        cart.write_text(check_cart(source, fixture))
         result = subprocess.run(
             ["/Applications/PICO-8.app/Contents/MacOS/pico8", "-desktop", tmp, "-x", str(cart)],
             capture_output=True, text=True, timeout=15,

@@ -437,6 +437,16 @@ def=1 hp=100
 monsters_act()
 assert(def==1 and hp==100,"movement breaks shield")
 rnd=original_rnd
+-- Real seed-7 purchase: rat breaks the new shield, slime attacks afterwards.
+new_run() fill_map() px=9 py=9 dir=1 gold=30 def=0 hp=26
+for x=8,10 do for y=9,10 do set_cell(x,y,tiles.floor) end end
+prisoner={x=9,y=8,key=id(9,8)*2+1,trader=true,t=5,name="shield",price=30}
+mons={{x=8,y=9,t=1,hp=5,mhp=5,atk=1,wake=0},
+ {x=10,y=9,t=2,hp=7,mhp=7,atk=2,wake=0}}
+open_actions(prisoner)
+srand(7) state="play" buy_prisoner_item()
+assert(gold==0 and prisoner.sold and def==0 and hp==20 and turns==1,"shield purchase reproduction changed")
+assert(msg=="slime flanks -4" and shield_loss==1 and shield_t>0,"later attack hides purchased shield loss")
 printh("OUBLIETTE PASS: shield species/strength/elite/cap boundaries, slime immunity, damage order, messages, multiple hits, no defense, movement")
 _init=nil _draw=nil _update60=nil
 '''
@@ -595,7 +605,7 @@ assert(peek(0x5f5f)==0x10 and peek(0x5f60+13)==world_palette[14],"menu changes d
 open_actions({x=px,y=py,t=7}) state="play" _draw()
 memcpy(0xa000,0x6000,0x2000)
 state="actions" view_dirty=true _draw()
-for offset=84*64,0x1fff do
+for offset=(vy1+2)*64,0x1fff do
  assert(peek(0x6000+offset)==peek(0xa000+offset),"chest modal obscures HP or messages")
 end
 printh("OUBLIETTE PASS: menu palette and chest HUD visibility")
@@ -961,10 +971,48 @@ btnp=old_btnp btn=old_btn
 printh("OUBLIETTE PASS: prisoner five items, free inspect/bump/leave, stable offer, insufficient gold, exact charge, held keys, enemy turn, sold out")
 _init=nil _draw=nil _update60=nil
 '''
+effects_checks = r'''
+_init() srand(7) new_run()
+fill_map() px=9 py=9 dir=1
+for y=7,11 do for x=7,11 do set_cell(x,y,tiles.floor) end end
+mons={} items={}
+local old_btnp,old_btn=btnp,btn
+local key=2
+btnp=function(n) return n==key end
+btn=function(n) return n==key end
+_update60()
+assert(py==8 and turns==1 and motion_t>0,"walk feedback delays action")
+key=1 _update60()
+assert(dir==2 and turns==2,"animation swallows next input")
+key=-1
+srand(99) local expected=rnd() srand(99)
+for frame=1,50 do _update60() end
+assert(rnd()==expected and turns==2 and py==8,"idle effects advance simulation or rng")
+assert(motion_t==0,"motion never settles")
+local x,y=front(1)
+mons={{x=x,y=y,t=1,hp=100,mhp=100,atk=3,wake=0}}
+hit_monster(mons[1],1)
+assert(hit_t>0 and hurt_t>0 and turns==3,"retaliation erases outgoing hit feedback")
+-- Force multiple losses to verify aggregation independently of breakage RNG.
+local old_act=monsters_act
+def=2
+monsters_act=function() def=0 say("rat hits -2") say("slime flanks -4") end
+tick()
+assert(shield_t>0 and shield_loss==2 and def==0,"later attackers hide equipment loss")
+monsters_act=old_act
+for frame=1,50 do _update60() end
+assert(hit_t==0 and hurt_t==0 and shield_t==0 and turns==4,"feedback timers spend turns or persist")
+hit_t=10 hurt_t=10 shield_t=45 motion_t=6
+new_run()
+assert(hit_t+hurt_t+shield_t+motion_t==0,"restart retains effects")
+btnp=old_btnp btn=old_btn
+printh("OUBLIETTE PASS: immediate movement/input, idle RNG/turns, simultaneous hit/hurt, equipment-loss persistence, expiry/restart")
+_init=nil _draw=nil _update60=nil
+'''
 with tempfile.TemporaryDirectory(prefix="oubliette-check-") as tmp:
-    for name, fixture in (("menu_render", menu_render_checks), ("prisoner_door", prisoner_door_checks), ("prisoner_layout", prisoner_layout_checks), ("prisoner_trade", prisoner_trade_checks), ("core", checks), ("palette", palette_checks), ("fade", fade_checks), ("rest", rest_checks), ("geometry", geometry_checks), ("mechanics", mechanics_checks), ("combat", combat_checks), ("shield", shield_checks), ("menu", menu_checks), ("chest", chest_checks), ("grate", grate_checks), ("lock_notch", lock_notch_checks), ("openings", opening_checks), ("slime", slime_checks), ("slime_render", slime_render_checks)):
+    for name, fixture in (("full_cart", '\n_init() new_run() _draw() printh("OUBLIETTE PASS: full cartridge startup/draw") _init=nil _draw=nil _update60=nil\n'), ("menu_render", menu_render_checks), ("prisoner_door", prisoner_door_checks), ("prisoner_layout", prisoner_layout_checks), ("prisoner_trade", prisoner_trade_checks), ("core", checks), ("palette", palette_checks), ("fade", fade_checks), ("rest", rest_checks), ("geometry", geometry_checks), ("mechanics", mechanics_checks), ("combat", combat_checks), ("shield", shield_checks), ("menu", menu_checks), ("chest", chest_checks), ("grate", grate_checks), ("lock_notch", lock_notch_checks), ("openings", opening_checks), ("slime", slime_checks), ("slime_render", slime_render_checks), ("effects", effects_checks)):
         target = Path(tmp) / f"{name}.p8"
-        target.write_text(check_cart(cart, fixture))
+        target.write_text(cart.replace("__gfx__", fixture + "__gfx__", 1) if name == "full_cart" else check_cart(cart, fixture))
         try:
             result = subprocess.run(
                 ["/Applications/PICO-8.app/Contents/MacOS/pico8", "-x", str(target)],
